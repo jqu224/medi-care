@@ -8,8 +8,18 @@
 
 <div align="center">
 
-[![English](https://img.shields.io/badge/lang-EN-0A2F2F?style=for-the-badge&labelColor=0d1117)](README.md)
-[![中文](https://img.shields.io/badge/lang-ZH-8b949e?style=for-the-badge&labelColor=0d1117)](README.zh-CN.md)
+[![English](https://img.shields.io/badge/lang-EN-0A2F2F)](README.md)
+[![中文](https://img.shields.io/badge/lang-ZH-8b949e)](README.zh-CN.md)
+
+</div>
+
+<div align="center">
+
+[![version](https://img.shields.io/github/v/release/jqu224/medi-care?label=version&color=0A2F2F)](https://github.com/jqu224/medi-care/releases/latest)
+[![downloads](https://img.shields.io/github/downloads/jqu224/medi-care/total?label=downloads&color=0A2F2F)](https://github.com/jqu224/medi-care/releases)
+![platform](https://img.shields.io/badge/Web%20%C2%B7%20mobile--first-local--first-0A2F2F)
+[![license](https://img.shields.io/badge/license-MIT-0A2F2F)](LICENSE)
+[![stars](https://img.shields.io/github/stars/jqu224/medi-care?style=social)](https://github.com/jqu224/medi-care/stargazers)
 
 </div>
 
@@ -19,17 +29,16 @@ Daily logs and explainable trend alerts for rare-disease care.
 
 — Patient, family, and clinician views over one local demo dataset.
 
-[![license](https://img.shields.io/badge/license-MIT-0A2F2F?style=flat-square)](LICENSE)
-[![react](https://img.shields.io/badge/react-19-555555?style=flat-square)](app/package.json)
-[![vite](https://img.shields.io/badge/vite-7-0A2F2F?style=flat-square)](app/package.json)
-[![tests](https://img.shields.io/badge/tests-19-555555?style=flat-square)](app/tests/model.test.ts)
-[![runtime](https://img.shields.io/badge/data-localStorage-0A2F2F?style=flat-square)](app/README.md)
+[![react](https://img.shields.io/badge/react-19-0A2F2F)](app/package.json)
+[![vite](https://img.shields.io/badge/vite-7-0A2F2F)](app/package.json)
+[![tests](https://img.shields.io/badge/tests-19-0A2F2F)](app/tests/model.test.ts)
+[![runtime](https://img.shields.io/badge/data-localStorage-0A2F2F)](app/README.md)
 
 A mobile-first web app for recording symptoms, temperature, and medication, then showing why a trend crossed a watch line.
 
 **Tips for getting started**
 
-1. Read [PRODUCT.md](PRODUCT.md) for who uses the app, then [reference/](reference/) for the clinical rules behind the demo.
+1. Read [PRODUCT.md](PRODUCT.md) for who uses the app, then run it from `app/`.
 2. From `app/`, install dependencies and start the Vite dev server on port `7100`.
 3. `npm test` runs 14 model checks. The running app keeps demo records in this browser's `localStorage`.
 
@@ -64,7 +73,6 @@ patient / family write          clinician reads
 | `app/` | React 19 + TypeScript + Vite workspace |
 | `app/tests/model.test.ts` | 14 model tests |
 | `mvp/` | Earlier static mock |
-| `reference/` | PRD, research notes, and UI references |
 | `PRODUCT.md` | Product scope |
 | `DESIGN.md` | Visual decisions |
 | `docs/assets/hero.svg` | README banner |

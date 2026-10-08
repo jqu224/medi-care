@@ -69,7 +69,7 @@ components:
 
 本文件于 2026-10-08 按白色界面迭代刷新。Pax 的 `DiscoverView.swift` 仍是日历结构参考；2026-10-07 确认的响应式导航继续有效，10 月 8 日进一步压缩日历、简化为「档案／当前页面」层级，并加入档案进入动效。当前规范替代旧版手机壳、大型风险 hero、固定六行月历与暖白底规则。
 
-实现依据：[workspace.css](app/src/workspace/workspace.css)、[Workspace.tsx](app/src/workspace/Workspace.tsx)、[Calendar.tsx](app/src/workspace/Calendar.tsx)、[calendarMath.ts](app/src/workspace/calendarMath.ts)、[motion.ts](app/src/workspace/motion.ts)。产品背景见 [多身份多病种决策](reference/webapp多身份多病种决策-20261007.md)。旧 `.impeccable/design.json` 未在本次范围内迁移，不作为本轮视觉规范。
+实现依据：[workspace.css](app/src/workspace/workspace.css)、[Workspace.tsx](app/src/workspace/Workspace.tsx)、[Calendar.tsx](app/src/workspace/Calendar.tsx)、[calendarMath.ts](app/src/workspace/calendarMath.ts)、[motion.ts](app/src/workspace/motion.ts)。旧 `.impeccable/design.json` 未在本次范围内迁移，不作为本轮视觉规范。
 
 ## Colors
 
@@ -164,11 +164,11 @@ components:
 月模式右侧依次为选中年月、六项月度汇总、统计说明、按日折叠明细。汇总含记录次数、检测次数、指标项数、住院事件、输液事件及超阈值项数，随病种/类型筛选更新；每日行展示日期、检测/指标/事件数及住院、输液、超阈值标签。默认全部收起，展开保留修改删除入口及医生只读限制。月标题使用实际年月，不用容易误解的“本月”。
 
 #### 健康提醒与 To do（2026-10-08）
-标题 → 行情式提醒横条 → 紧凑指标网格；避免指标轨道无上限拉长。横条 8 秒换一项，阅读、展开、减少动态效果时停止；严重度计数固定可见，展开后逐条展示证据。首页摘要新增 To do，以现有计划和记录缺口形成可执行入口，明确标记本地规则。详见 reference/webapp多身份多病种决策-20261007.md 当日补充。
+标题 → 行情式提醒横条 → 紧凑指标网格；避免指标轨道无上限拉长。横条 8 秒换一项，阅读、展开、减少动态效果时停止；严重度计数固定可见，展开后逐条展示证据。首页摘要新增 To do，以现有计划和记录缺口形成可执行入口，明确标记本地规则。
 
 
 ### 2026-10-08 · 日常症状程度记录
-关节肿痛、精神状态、皮疹使用四档程度＋固定解释＋具体影响＋可选备注，皮疹另选身体部位。默认未填写，录入时显示此前记录；保存后支持程度升降比较与趋势。旧“是”保留为有症状但程度未记录，不能推算等级。0–3 是个人自评顺序，不是临床严重程度；精神状态与意识异常独立。详细口径见 `reference/webapp多身份多病种决策-20261007.md`。
+关节肿痛、精神状态、皮疹使用四档程度＋固定解释＋具体影响＋可选备注，皮疹另选身体部位。默认未填写，录入时显示此前记录；保存后支持程度升降比较与趋势。旧“是”保留为有症状但程度未记录，不能推算等级。0–3 是个人自评顺序，不是临床严重程度；精神状态与意识异常独立。
 
 
 ### 2026-10-08 · 警报滚动条层级

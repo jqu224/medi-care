@@ -14,3 +14,7 @@ coverage/
 
 .zion-mcp/
 .zcode/
+
+# Private notes. Never publish.
+AGENTS.md
+reference/

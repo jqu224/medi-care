@@ -8,8 +8,18 @@
 
 <div align="center">
 
-[![English](https://img.shields.io/badge/lang-EN-8b949e?style=for-the-badge&labelColor=0d1117)](README.md)
-[![中文](https://img.shields.io/badge/lang-ZH-0A2F2F?style=for-the-badge&labelColor=0d1117)](README.zh-CN.md)
+[![English](https://img.shields.io/badge/lang-EN-8b949e)](README.md)
+[![中文](https://img.shields.io/badge/lang-ZH-0A2F2F)](README.zh-CN.md)
+
+</div>
+
+<div align="center">
+
+[![最新版本](https://img.shields.io/github/v/release/jqu224/medi-care?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&color=0A2F2F)](https://github.com/jqu224/medi-care/releases/latest)
+[![下载量](https://img.shields.io/github/downloads/jqu224/medi-care/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F&color=0A2F2F)](https://github.com/jqu224/medi-care/releases)
+![平台](https://img.shields.io/badge/Web%20%C2%B7%20%E7%A7%BB%E5%8A%A8%E4%BC%98%E5%85%88-%E6%9C%AC%E5%9C%B0%E8%BF%90%E8%A1%8C-0A2F2F)
+[![MIT](https://img.shields.io/badge/license-MIT-0A2F2F)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/jqu224/medi-care?style=social)](https://github.com/jqu224/medi-care/stargazers)
 
 </div>
 
@@ -19,17 +29,16 @@
 
 — 患者、家属、医生共用同一套本地演示数据。
 
-[![license](https://img.shields.io/badge/license-MIT-0A2F2F?style=flat-square)](LICENSE)
-[![react](https://img.shields.io/badge/react-19-555555?style=flat-square)](app/package.json)
-[![vite](https://img.shields.io/badge/vite-7-0A2F2F?style=flat-square)](app/package.json)
-[![tests](https://img.shields.io/badge/tests-19-555555?style=flat-square)](app/tests/model.test.ts)
-[![runtime](https://img.shields.io/badge/data-localStorage-0A2F2F?style=flat-square)](app/README.md)
+[![react](https://img.shields.io/badge/react-19-0A2F2F)](app/package.json)
+[![vite](https://img.shields.io/badge/vite-7-0A2F2F)](app/package.json)
+[![tests](https://img.shields.io/badge/tests-19-0A2F2F)](app/tests/model.test.ts)
+[![runtime](https://img.shields.io/badge/data-localStorage-0A2F2F)](app/README.md)
 
 这是一个移动端优先的 Web 应用：记录症状、体温和用药，并在数值越过观察线时写明原因。
 
 **开始之前**
 
-1. 先读 [PRODUCT.md](PRODUCT.md) 看使用者是谁，再读 [reference/](reference/) 看演示所用的临床规则。
+1. 先读 [PRODUCT.md](PRODUCT.md) 看使用者是谁，再从 `app/` 跑起来。
 2. 进入 `app/`，安装依赖，在端口 `7100` 启动 Vite。
 3. `npm test` 跑 14 条模型检查。运行中的应用把演示记录留在当前浏览器的 `localStorage`。
 
@@ -64,7 +73,6 @@ patient / family write          clinician reads
 | `app/` | React 19 + TypeScript + Vite 工作区 |
 | `app/tests/model.test.ts` | 14 条模型测试 |
 | `mvp/` | 更早的静态稿 |
-| `reference/` | PRD、调研和界面参考 |
 | `PRODUCT.md` | 产品范围 |
 | `DESIGN.md` | 视觉决定 |
 | `docs/assets/hero.svg` | README 头图 |
