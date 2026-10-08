@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="heroTitle heroDesc">
+  <title id="heroTitle">Medi-care</title>
+  <desc id="heroDesc">Warm clinical log with a phone showing a temperature trend and an explainable alert.</desc>
+  <!--
+    HCT hue 168 clinical eucalyptus + hue 78 warm sand.
+    Tone 87: #9EEAC2 / #F4D6A4
+    Tone 67: #4AB4A0 / #C4A574
+    Tone 17: #0A2F2F / #3A280C
+    Paper ground matches the app: #FBF8F3
+  -->
+  <defs>
+    <clipPath id="frame">
+      <rect width="1200" height="420" rx="28"/>
+    </clipPath>
+    <linearGradient id="trend" x1="72" y1="210" x2="860" y2="168" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A2F2F"/>
+      <stop offset="0.55" stop-color="#4AB4A0"/>
+      <stop offset="1" stop-color="#9EEAC2"/>
+    </linearGradient>
+    <clipPath id="screen">
+      <rect x="878" y="58" width="232" height="312" rx="22"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#frame)">
+    <rect width="1200" height="420" fill="#FBF8F3"/>
+    <g stroke="#E7CFA8" stroke-width="1" opacity="0.55">
+      <line x1="0" y1="56" x2="1200" y2="56"/>
+      <line x1="0" y1="112" x2="1200" y2="112"/>
+      <line x1="0" y1="168" x2="820" y2="168"/>
+      <line x1="0" y1="224" x2="820" y2="224"/>
+      <line x1="0" y1="280" x2="820" y2="280"/>
+      <line x1="0" y1="336" x2="1200" y2="336"/>
+    </g>
+    <g fill="#0A2F2F">
+      <rect x="0" y="0" width="18" height="420"/>
+      <g opacity="0.35">
+        <rect x="18" y="56" width="10" height="1"/>
+        <rect x="18" y="112" width="16" height="1"/>
+        <rect x="18" y="168" width="10" height="1"/>
+        <rect x="18" y="224" width="16" height="1"/>
+        <rect x="18" y="280" width="10" height="1"/>
+        <rect x="18" y="336" width="16" height="1"/>
+      </g>
+    </g>
+
+    <g transform="translate(64,78)" fill="none" stroke="#9BE1C6" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 22V6L16 16L28 6V22" stroke="#0A2F2F"/>
+      <path d="M11 22H21" stroke="#4AB4A0" stroke-width="2"/>
+    </g>
+    <text x="108" y="96" fill="#0A2F2F" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" letter-spacing="3.5">RARE DISEASE LOG</text>
+
+    <text x="64" y="178" fill="#0A2F2F" font-family="ui-sans-serif, system-ui, sans-serif" font-size="84" font-weight="800">Medi-care</text>
+    <path d="M64 206 C 220 206, 360 188, 520 176 S 760 150, 860 162" fill="none" stroke="url(#trend)" stroke-width="2"/>
+    <text x="64" y="252" fill="#1C1917" font-family="ui-sans-serif, system-ui, sans-serif" font-size="24" font-weight="560">Trend alerts you can explain</text>
+    <text x="64" y="292" fill="#3A280C" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" letter-spacing="1.4">daily log   ·   risk band   ·   evidence chain</text>
+
+    <g>
+      <rect x="64" y="348" width="196" height="40" fill="none" stroke="#0A2F2F" stroke-width="1.6"/>
+      <rect x="69" y="353" width="186" height="30" fill="none" stroke="#0A2F2F" stroke-width="1"/>
+      <text x="162" y="373" text-anchor="middle" fill="#0A2F2F" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" letter-spacing="4">BY JQU224</text>
+    </g>
+
+    <g>
+      <rect x="868" y="36" width="252" height="356" rx="36" fill="#0A2F2F"/>
+      <rect x="882" y="50" width="224" height="328" rx="26" fill="#FBF8F3"/>
+      <circle cx="994" cy="68" r="4" fill="#C4A574"/>
+      <text x="902" y="108" fill="#0A2F2F" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="750">Today</text>
+      <text x="902" y="130" fill="#5C5346" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">Xiao Yu · sJIA</text>
+      <rect x="902" y="146" width="184" height="96" rx="16" fill="#FFFFFF" stroke="#E7CFA8"/>
+      <text x="916" y="172" fill="#5C5346" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11">Temperature</text>
+      <text x="916" y="206" fill="#0A2F2F" font-family="ui-sans-serif, system-ui, sans-serif" font-size="32" font-weight="750">37.8</text>
+      <text x="992" y="206" fill="#4AB4A0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">°C</text>
+      <path d="M916 224 C 940 224, 948 210, 968 214 S 1000 228, 1024 206 S 1060 188, 1074 196" fill="none" stroke="#4AB4A0" stroke-width="2.4" stroke-linecap="round"/>
+      <rect x="902" y="256" width="72" height="26" rx="13" fill="#0A2F2F"/>
+      <text x="938" y="274" text-anchor="middle" fill="#9EEAC2" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" letter-spacing="1.5">WATCH</text>
+      <rect x="902" y="296" width="184" height="62" rx="14" fill="#FFFFFF" stroke="#E7CFA8"/>
+      <rect x="902" y="296" width="6" height="62" rx="3" fill="#0A2F2F"/>
+      <text x="920" y="322" fill="#0A2F2F" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700">Ferritin rising</text>
+      <text x="920" y="342" fill="#5C5346" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11">6 days · seek care</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,36 @@
+{
+  "name": "sJIA 守护者 · MAS 动态预警（患者端）",
+  "description": "暖白纸面 + 青绿主色的患儿家庭 MAS 动态预警 mobile web",
+  "colors": {
+    "ground-warm": "#FBF8F3",
+    "ink-warm": "#1C1917",
+    "ink-secondary": "#78716C",
+    "primary-teal": "#0F766E",
+    "primary-teal-deep": "#115E59",
+    "teal-tint": "#F0FDFA",
+    "card-white": "#FFFFFF",
+    "border-warm": "#F0EBE2",
+    "risk-green": "#16A34A",
+    "risk-amber": "#D97706",
+    "risk-red": "#DC2626",
+    "risk-green-bg": "#F0FDF4",
+    "risk-amber-bg": "#FFFBEB",
+    "risk-red-bg": "#FEF2F2"
+  },
+  "typography": {
+    "display": { "fontSize": "26px", "fontWeight": 700, "lineHeight": 1.35, "letterSpacing": "-0.01em" },
+    "metric": { "fontSize": "30px", "fontWeight": 700, "fontFeature": "tnum" },
+    "title": { "fontSize": "17px", "fontWeight": 700 },
+    "body": { "fontSize": "14px", "lineHeight": 1.6 },
+    "label": { "fontSize": "12px", "fontWeight": 500 }
+  },
+  "rounded": { "card": "20px", "input": "12px", "pill": "999px" },
+  "spacing": { "page-x": "20px", "card-pad": "16px", "stack": "12px" },
+  "components": {
+    "button-primary": { "backgroundColor": "{colors.primary-teal}", "textColor": "#FFFFFF", "rounded": "{rounded.pill}", "height": "48px" },
+    "button-ghost": { "backgroundColor": "{colors.card-white}", "textColor": "{colors.ink-secondary}", "rounded": "{rounded.pill}" },
+    "card-surface": { "backgroundColor": "{colors.card-white}", "rounded": "{rounded.card}" },
+    "chip-risk-red": { "backgroundColor": "{colors.risk-red}", "textColor": "#FFFFFF", "rounded": "{rounded.pill}" },
+    "chip-risk-amber": { "backgroundColor": "{colors.risk-amber}", "textColor": "#FFFFFF", "rounded": "{rounded.pill}" }
+  }
+}

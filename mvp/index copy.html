@@ -1,0 +1,586 @@
+6 屏 → 3 屏 + 1 个记录抽屉
+保留	砍/合并	理由
+今日（Alex Johnsen 那种头部问候 + 风险 hero + 今日两次体温 + 服药）	"我的"→ 免责条收进预警页脚	问候是家长每天打开第一眼，PRD 的"15 秒录三件事"就从这页出发
+趋势（4 张指标卡：体温 / 铁蛋白 684 线 / 血小板 181 线 / 纤维蛋白原 3.6 g/L 线）	7 张卡 → 4 张	AST/TG/LDH 二期；这 4 个足够演示 MAS 前兆
+预警（证据链五段式 + 灵敏度滑杆实时改阈值）	"就诊一页通"→ 二期，预警页留一个入口按钮	评审灵魂是"可解释 + 可配置"，这页必须留
+记录抽屉（体温步进 + 快捷值 38.5 + 症状 chips + 服药确认）	不再是独立页	抽屉让"记完立刻看到 hero 变色"成为一个连贯动作
+你的 4 个决策点我直接拍了：① 主色用深青绿 + 暖纸白底（暖纸白是致敬肌愈通 #FBF8F3，青绿是你的推荐）；② 一页通挪二期；③ 滑轮改成步进 + 快捷值（滑轮在 Web 端手感差、可访问性烂）；④ 红色行动卡文案我写了保守版，仍建议医生顾问过一遍，代码里标了 TODO:医生审。继续<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#F6F2EA">
+<title>暖哨 · sJIA 家庭预警（MVP 原型）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ---------- tokens ---------- */
+:root{
+  --paper:#F6F2EA; --card:#FFFDF9; --paper-2:#EFE9DE;
+  --ink:#1B1F1D; --ink-2:#4A524E; --ink-3:#6B746E; --line:#E3DCCF;
+  --green:#0E6B55; --green-deep:#0A4D3E; --green-soft:#DCEBE3;
+  --amber:#D9A24A; --amber-text:#3A2404; --amber-soft:#F6E6C6;
+  --red:#B3261E; --red-text:#7A1710; --red-soft:#F7DAD5;
+  --r-lg:28px; --r-md:18px; --r-sm:12px;
+  --sans:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --serif:"Fraunces","Songti SC",Georgia,serif;
+  --ease:cubic-bezier(.2,.7,.2,1);
+  --z-nav:10; --z-fab:11; --z-sheet:20; --z-toast:30;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{font-family:var(--sans);color:var(--ink);background:var(--paper);min-height:100dvh;line-height:1.5;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:active{transform:scale(.98)}
+.num{font-family:var(--serif);font-variation-settings:"opsz" 144;font-feature-settings:"tnum";letter-spacing:-.02em}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* ---------- shell ---------- */
+.app{max-width:430px;margin:0 auto;height:100dvh;display:flex;flex-direction:column;position:relative;overflow:hidden;background:var(--paper)}
+@media (min-width:720px){
+  body{background:#E6DFD2;display:grid;place-items:center;padding:28px}
+  .app{height:min(900px,calc(100dvh - 56px));border-radius:44px;box-shadow:0 40px 80px -30px rgba(27,31,29,.35),0 0 0 1px rgba(27,31,29,.08)}
+}
+main{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:0 20px 96px;scrollbar-width:none}
+main::-webkit-scrollbar{display:none}
+
+/* ---------- header (ref: Alex Johnsen greeting) ---------- */
+.top{display:flex;align-items:center;gap:14px;padding:calc(16px + env(safe-area-inset-top)) 20px 6px}
+.avatar{width:48px;height:48px;border-radius:50%;background:var(--green-soft);color:var(--green-deep);display:grid;place-items:center;font-weight:700;font-size:18px;flex:none}
+.greet-hi{font-size:14px;color:var(--ink-3);line-height:1.2}
+.greet h1{font-size:24px;font-weight:500;line-height:1.2;letter-spacing:-.01em}
+.greet-sub{font-size:12.5px;color:var(--ink-2);margin-top:3px}
+.bell{margin-left:auto;width:44px;height:44px;border-radius:50%;background:var(--card);border:1px solid var(--line);display:grid;place-items:center;position:relative;flex:none}
+.bell .dot{position:absolute;top:10px;right:11px;width:9px;height:9px;border-radius:50%;background:var(--red);border:2px solid var(--card);display:none}
+.bell.has .dot{display:block}
+
+/* ---------- views ---------- */
+.view{display:none}
+.view.is-active{display:block}
+.view.is-active>*{animation:rise .5s var(--ease) both}
+.view.is-active>*:nth-child(2){animation-delay:.05s}
+.view.is-active>*:nth-child(3){animation-delay:.1s}
+.view.is-active>*:nth-child(4){animation-delay:.15s}
+.view.is-active>*:nth-child(5){animation-delay:.2s}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.page-h{font-size:28px;font-weight:500;letter-spacing:-.01em;margin:14px 0 4px}
+.page-sub{font-size:13px;color:var(--ink-3);margin-bottom:16px}
+.sec-h{display:flex;justify-content:space-between;align-items:baseline;margin:26px 0 10px}
+.sec-h h2{font-size:15px;font-weight:600}
+.sec-h small{font-size:12px;color:var(--ink-3)}
+
+/* ---------- hero ---------- */
+.hero{border-radius:var(--r-lg);padding:20px 22px 18px;margin-top:12px;transition:background .5s var(--ease),color .5s var(--ease)}
+.hero[data-level=green]{background:var(--green);color:#fff}
+.hero[data-level=amber]{background:var(--amber);color:var(--amber-text)}
+.hero[data-level=red]{background:var(--red);color:#fff}
+.hero-row{display:flex;justify-content:space-between;align-items:center;font-size:13px}
+.pill{padding:5px 11px;border-radius:999px;font-size:12px;font-weight:500;background:color-mix(in srgb,currentColor 16%,transparent)}
+.hero-temp{display:flex;align-items:baseline;gap:6px;margin-top:10px}
+.hero-temp .num{font-size:72px;line-height:1;font-weight:300}
+.hero-temp .unit{font-size:20px;opacity:.9}
+.hero-temp .when{font-size:13px;opacity:.85;margin-left:auto;align-self:flex-end;margin-bottom:8px}
+.hero-line{font-size:14px;margin-top:8px;font-weight:500}
+.hero-brief{font-size:14px;line-height:1.55;margin-top:6px;opacity:.92}
+.hero-act{display:flex;gap:10px;margin-top:16px}
+.hero-act button{flex:1;padding:13px;border-radius:999px;font-weight:600;font-size:14px}
+.hero-act .solid{background:#fff;color:var(--red-text)}
+.hero-act .ghost{border:1.5px solid color-mix(in srgb,currentColor 55%,transparent)}
+.hero[data-level=green] .hero-act,.hero[data-level=amber] .hero-act{display:none}
+
+/* ---------- rows ---------- */
+.rows{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
+.row{display:flex;align-items:center;gap:14px;padding:14px 16px;min-height:64px}
+.row+.row{border-top:1px solid var(--line)}
+.row .ic{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;background:var(--paper-2);flex:none;font-size:16px}
+.row .t{font-size:15px;font-weight:500}
+.row .s{font-size:12.5px;color:var(--ink-3);margin-top:1px}
+.row .v{margin-left:auto;text-align:right}
+.row .v .num{font-size:24px;font-weight:500;line-height:1}
+.row .v .pending{font-size:13px;color:var(--ink-3)}
+.switch{margin-left:auto;width:52px;height:32px;border-radius:999px;background:var(--line);position:relative;transition:background .25s;flex:none}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .25s var(--ease)}
+.switch[aria-checked=true]{background:var(--green)}
+.switch[aria-checked=true]::after{transform:translateX(20px)}
+
+/* ---------- metric cards ---------- */
+.metric{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);padding:16px 16px 12px;margin-bottom:12px}
+.m-head{display:flex;justify-content:space-between;align-items:center}
+.m-head .name{font-size:15px;font-weight:600}
+.tag{font-size:11px;padding:3px 8px;border-radius:999px;background:var(--paper-2);color:var(--ink-2)}
+.m-val{display:flex;align-items:baseline;gap:6px;margin-top:6px}
+.m-val .num{font-size:34px;font-weight:500;line-height:1}
+.m-val .unit{font-size:13px;color:var(--ink-3)}
+.m-val .delta{margin-left:auto;font-size:13px;font-weight:500}
+.delta.up{color:var(--red)} .delta.down{color:var(--green)} .delta.warn{color:#8A5A10}
+.metric svg{width:100%;height:auto;display:block;margin-top:8px}
+.m-foot{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-3);margin-top:4px}
+.seg{display:inline-flex;background:var(--paper-2);border-radius:999px;padding:3px}
+.seg button{padding:6px 14px;border-radius:999px;font-size:13px;color:var(--ink-2)}
+.seg button[aria-pressed=true]{background:var(--card);color:var(--ink);font-weight:500;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+/* ---------- alert / evidence chain ---------- */
+.alert{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden}
+.alert-head{padding:18px 20px 14px;display:flex;align-items:center;gap:12px}
+.alert-head .lvl{width:12px;height:12px;border-radius:50%;flex:none}
+.alert-head h3{font-size:17px;font-weight:600;line-height:1.3}
+.alert-head p{font-size:12.5px;color:var(--ink-3)}
+.chain{list-style:none;padding:4px 20px 18px 20px}
+.chain li{position:relative;padding:10px 0 10px 34px}
+.chain li::before{content:attr(data-n);position:absolute;left:0;top:11px;width:22px;height:22px;border-radius:50%;background:var(--ink);color:#fff;font-size:11px;font-weight:600;display:grid;place-items:center}
+.chain li:not(:last-child)::after{content:"";position:absolute;left:10.5px;top:36px;bottom:-8px;width:1px;background:var(--line)}
+.chain .k{font-size:12px;color:var(--ink-3);letter-spacing:.04em}
+.chain .d{font-size:14.5px;line-height:1.55;margin-top:2px}
+.chain .d ul{padding-left:16px;margin-top:4px}
+.chain .d li{padding:2px 0}
+.chain .d li::before,.chain .d li::after{display:none}
+.chain .cite{font-size:12.5px;color:var(--ink-2);background:var(--paper-2);padding:8px 10px;border-radius:10px;margin-top:6px;display:block}
+.alert-act{display:flex;gap:10px;padding:0 20px 20px}
+.alert-act button{flex:1;padding:14px;border-radius:999px;font-weight:600;font-size:14px}
+.alert-act .pri{background:var(--ink);color:#fff}
+.alert-act .sec{border:1.5px solid var(--line);color:var(--ink)}
+
+.sens{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);padding:16px}
+.sens-row{display:flex;justify-content:space-between;align-items:baseline}
+.sens-row b{font-size:15px;font-weight:600}
+.sens-row span{font-size:13px;color:var(--ink-2)}
+input[type=range]{width:100%;margin:16px 0 6px;accent-color:var(--green);height:32px}
+.sens-labels{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-3)}
+.sens-detail{margin-top:12px;font-size:13px;color:var(--ink-2);line-height:1.6;border-top:1px solid var(--line);padding-top:12px}
+.history .row .t{font-weight:500}
+.disclaimer{font-size:12px;color:var(--ink-3);line-height:1.6;margin-top:22px;padding:0 4px}
+
+/* ---------- tabbar + fab ---------- */
+.tabbar{display:flex;border-top:1px solid var(--line);background:color-mix(in srgb,var(--paper) 86%,#fff);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:6px 12px calc(8px + env(safe-area-inset-bottom));z-index:var(--z-nav)}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 0 6px;font-size:11px;color:var(--ink-3);border-radius:14px;position:relative}
+.tab svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tab[aria-current=page]{color:var(--ink);font-weight:500}
+.tab .badge{position:absolute;top:6px;left:calc(50% + 6px);width:8px;height:8px;border-radius:50%;background:var(--red);display:none}
+.tab.has .badge{display:block}
+.fab{position:absolute;right:20px;bottom:calc(86px + env(safe-area-inset-bottom));height:56px;padding:0 22px 0 18px;border-radius:999px;background:var(--ink);color:#fff;display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px;z-index:var(--z-fab);box-shadow:0 14px 28px -10px rgba(27,31,29,.5)}
+.fab svg{width:22px;height:22px;stroke:#fff;fill:none;stroke-width:2.2;stroke-linecap:round}
+
+/* ---------- sheet ---------- */
+.scrim{position:absolute;inset:0;background:rgba(27,31,29,.42);opacity:0;pointer-events:none;transition:opacity .35s;z-index:var(--z-sheet)}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--card);border-radius:28px 28px 0 0;padding:10px 20px calc(20px + env(safe-area-inset-bottom));transform:translateY(105%);transition:transform .45s var(--ease);z-index:calc(var(--z-sheet) + 1);max-height:92%;overflow-y:auto}
+.sheet::before{content:"";display:block;width:40px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 14px}
+.app.sheet-open .scrim{opacity:1;pointer-events:auto}
+.app.sheet-open .sheet{transform:none}
+.sh-head{display:flex;justify-content:space-between;align-items:baseline}
+.sh-head h2{font-size:20px;font-weight:600}
+.sh-head span{font-size:12.5px;color:var(--ink-3)}
+.f-label{font-size:13px;color:var(--ink-3);margin:20px 0 10px;display:flex;justify-content:space-between}
+.stepper{display:flex;align-items:center;justify-content:center;gap:22px}
+.stepper button{width:52px;height:52px;border-radius:50%;border:1.5px solid var(--line);font-size:26px;display:grid;place-items:center;color:var(--ink)}
+.stepper .num{font-size:60px;font-weight:300;min-width:150px;text-align:center;line-height:1}
+.stepper .num small{font-size:20px;font-family:var(--sans);color:var(--ink-3);margin-left:4px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:10px 14px;border-radius:999px;border:1px solid var(--line);background:var(--paper);font-size:14px;min-height:40px}
+.chip[aria-pressed=true]{background:var(--ink);color:#fff;border-color:var(--ink)}
+.chip.hot[aria-pressed=true]{background:var(--red);border-color:var(--red)}
+.save{width:100%;margin-top:22px;padding:17px;border-radius:999px;background:var(--green);color:#fff;font-weight:600;font-size:16px}
+
+/* ---------- toast ---------- */
+.toast{position:absolute;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translate(-50%,10px);background:var(--ink);color:#fff;padding:11px 16px;border-radius:999px;font-size:13.5px;opacity:0;transition:all .35s var(--ease);z-index:var(--z-toast);pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- header -->
+  <header class="top">
+    <div class="avatar" aria-hidden="true">雨</div>
+    <div class="greet">
+      <p class="greet-hi" id="greetHi">下午好</p>
+      <h1>小雨妈妈</h1>
+      <p class="greet-sub" id="greetSub">小雨 · 7 岁 · 泼尼松减量第 9 天</p>
+    </div>
+    <button class="bell" id="bell" aria-label="预警通知"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2h-15zM10 21h4"/></svg><span class="dot"></span></button>
+  </header>
+
+  <main id="main">
+
+    <!-- ===== 今日 ===== -->
+    <section class="view is-active" id="v-today" aria-labelledby="greetHi">
+      <article class="hero" id="hero" data-level="amber" aria-live="polite">
+        <div class="hero-row"><span>今日状态</span><span class="pill" id="heroPill">需留意</span></div>
+        <div class="hero-temp">
+          <span class="num" id="heroTemp">37.8</span><span class="unit">℃</span>
+          <span class="when" id="heroWhen">今早 07:40</span>
+        </div>
+        <p class="hero-line" id="heroLine"></p>
+        <p class="hero-brief" id="heroBrief"></p>
+        <div class="hero-act">
+          <button class="solid" data-go="v-alert">看预警依据</button>
+          <button class="ghost" id="callDoc">联系主诊医生</button>
+        </div>
+      </article>
+
+      <div class="sec-h"><h2>今日三件事</h2><small id="todayCount">已记 2/3</small></div>
+      <div class="rows" id="todayRows"></div>
+
+      <div class="sec-h"><h2>最近 7 天最高体温</h2><small>家长自测</small></div>
+      <div class="metric" id="weekCard" style="margin-bottom:0"><svg id="weekChart" viewBox="0 0 320 110" role="img" aria-label="近 7 天最高体温柱状图"></svg><div class="m-foot"><span>虚线：37.3 / 38.5 ℃</span><span id="weekRange"></span></div></div>
+    </section>
+
+    <!-- ===== 趋势 ===== -->
+    <section class="view" id="v-trend" aria-labelledby="trendH">
+      <h2 class="page-h" id="trendH">趋势</h2>
+      <p class="page-sub">实线=数值 · 虚线=分类标准门槛 · 浅色带=常见正常区间 · 底部标记=事件</p>
+      <div id="metrics"></div>
+    </section>
+
+    <!-- ===== 预警 ===== -->
+    <section class="view" id="v-alert" aria-labelledby="alertH">
+      <h2 class="page-h" id="alertH">预警</h2>
+      <p class="page-sub">每条预警都能追到"哪个值、越过哪条线、依据是什么"</p>
+      <article class="alert" id="alertCard"></article>
+
+      <div class="sec-h"><h2>灵敏度</h2><small>随时可调，立即生效</small></div>
+      <div class="sens">
+        <div class="sens-row"><b id="sensName">标准</b><span id="sensFreq">预计警报频率 约 2 次/月</span></div>
+        <input type="range" id="sens" min="0" max="2" step="1" value="1" aria-label="预警灵敏度">
+        <div class="sens-labels"><span>保守</span><span>标准</span><span>敏感</span></div>
+        <div class="sens-detail" id="sensDetail"></div>
+      </div>
+
+      <div class="sec-h history"><h2>最近记录</h2></div>
+      <div class="rows history">
+        <div class="row"><div class="ic">🏥</div><div><div class="t">门诊检验卡已录入</div><div class="s">10/5 · 铁蛋白 / 血常规 / 凝血</div></div></div>
+        <div class="row"><div class="ic">💊</div><div><div class="t">激素减量提醒</div><div class="s">9/28 · 7.5 → 5 mg，进入高危观察窗</div></div></div>
+      </div>
+
+      <p class="disclaimer">暖哨是辅助预警工具，不是诊断工具，不替代医生的专业判断；任何用药调整请遵医嘱。阈值依据 2016 PRINTO/ACR/EULAR sJIA-MAS 分类标准（纤维蛋白原单位为 g/L）。</p>
+    </section>
+  </main>
+
+  <!-- fab + tabbar -->
+  <button class="fab" id="fab" aria-haspopup="dialog" aria-controls="sheet"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>记录</button>
+  <nav class="tabbar" aria-label="主导航">
+    <button class="tab" data-go="v-today" aria-current="page"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>今日</button>
+    <button class="tab" data-go="v-trend"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 5-7 4 4"/><path d="M3 21h18"/></svg>趋势</button>
+    <button class="tab" data-go="v-alert" id="tabAlert"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3zM12 10v4M12 17.5v.5"/></svg>预警<span class="badge"></span></button>
+  </nav>
+
+  <!-- sheet -->
+  <div class="scrim" id="scrim"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="shTitle">
+    <div class="sh-head"><h2 id="shTitle">快速记录</h2><span id="shTime"></span></div>
+
+    <div class="f-label"><span>体温</span><span>耳温 / 腋温都可以</span></div>
+    <div class="stepper">
+      <button id="tDown" aria-label="降低 0.1 度">−</button>
+      <div class="num" id="tVal">37.8<small>℃</small></div>
+      <button id="tUp" aria-label="升高 0.1 度">+</button>
+    </div>
+    <div class="chips" style="justify-content:center;margin-top:12px" id="tQuick">
+      <button class="chip" data-t="36.8">36.8</button><button class="chip" data-t="37.5">37.5</button>
+      <button class="chip hot" data-t="38.5">38.5</button><button class="chip hot" data-t="39.2">39.2</button>
+    </div>
+
+    <div class="f-label"><span>今天有没有这些</span><span>没有就不选</span></div>
+    <div class="chips" id="symChips">
+      <button class="chip hot" data-s="皮疹" aria-pressed="false">皮疹</button>
+      <button class="chip hot" data-s="出血点" aria-pressed="false">出血点/瘀斑</button>
+      <button class="chip hot" data-s="精神差" aria-pressed="false">精神差/嗜睡</button>
+      <button class="chip" data-s="关节痛" aria-pressed="false">关节痛</button>
+      <button class="chip" data-s="腹痛" aria-pressed="false">腹痛</button>
+      <button class="chip" data-s="咳嗽" aria-pressed="false">咳嗽</button>
+    </div>
+
+    <div class="f-label"><span>激素</span><span>减量期第 9 天</span></div>
+    <div class="rows"><div class="row"><div class="ic">💊</div><div><div class="t">泼尼松 5 mg</div><div class="s">早餐后 1 次</div></div><button class="switch" id="shTaken" role="switch" aria-checked="true" aria-label="今日已服药"></button></div></div>
+
+    <button class="save" id="save">保存今晚记录</button>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+</div>
+
+<script>
+/* ============ 数据（演示用种子：MAS 前兆虚拟患儿） ============ */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const TODAY=new Date(2026,9,7);
+const fmtD=off=>{const d=new Date(TODAY);d.setDate(d.getDate()+off);return `${d.getMonth()+1}/${d.getDate()}`};
+
+const state={
+  temps:[ // 近 14 天 [早,晚]，index 13 = 今天
+    [36.7,36.9],[36.8,37.0],[36.6,36.9],[36.9,37.1],[36.8,37.0],[36.7,36.8],[37.0,37.2],
+    [36.9,37.1],[37.1,37.3],[37.2,37.4],[37.3,37.6],[37.5,38.1],[37.6,38.6],[37.8,null]
+  ],
+  symptoms:[], taken:true,
+  labs:{
+    ferritin:{name:'铁蛋白',unit:'ng/mL',line:684,band:[7,140],ymin:0,ymax:2000,worseUp:true, pts:[[-28,320],[-14,520],[-2,1480]]},
+    plt:{name:'血小板',unit:'×10⁹/L',line:181,band:[150,450],ymin:100,ymax:450,worseUp:false,pts:[[-28,290],[-14,236],[-2,188]]},
+    fib:{name:'纤维蛋白原',unit:'g/L',line:3.6,band:[2,4],ymin:2,ymax:5.5,worseUp:false,pts:[[-28,4.8],[-14,4.1],[-2,3.9]]}
+  },
+  events:[[-9,'💊','激素减量'],[-2,'🏥','门诊'],[-1,'🔴','发热']],
+  sens:1
+};
+const SENS=[
+  {name:'保守',ratio:3,fever:3,freq:'约 1 次/月'},
+  {name:'标准',ratio:2,fever:2,freq:'约 2 次/月'},
+  {name:'敏感',ratio:1.5,fever:1,freq:'约 5 次/月'}
+];
+const RED_SYM=['皮疹','出血点','精神差'];
+
+/* ============ 预警引擎（纯规则、可解释） ============ */
+function feverDays(){
+  let n=0;
+  for(let i=state.temps.length-1;i>=0;i--){
+    const [am,pm]=state.temps[i]; const m=Math.max(...[am,pm].filter(v=>v!=null));
+    if(m>=38.5){n++;continue}
+    if(i===state.temps.length-1&&pm==null) continue; // 今天还没测晚上，不打断连续
+    break;
+  }
+  return n;
+}
+function evaluate(){
+  const s=SENS[state.sens], sig=[];
+  const f=state.labs.ferritin.pts, [fd,fl]=f.at(-1);
+  const base=[...f].reverse().find(p=>p[0]<=fd-7);
+  const ratio=base?fl/base[1]:1, span=base?fd-base[0]:0;
+  if(fl>684) sig.push({k:'lab',t:`铁蛋白 ${fl.toLocaleString()} ng/mL，已越过 684 的分类标准门槛`,line:'铁蛋白 > 684 ng/mL'});
+  if(ratio>=s.ratio) sig.push({k:'lab',t:`铁蛋白 ${span} 天内由 ${base[1]} 升至 ${fl.toLocaleString()}，上升 ${ratio.toFixed(1)} 倍`,line:`7 天内升幅 ≥ ${s.ratio}×（你的灵敏度设定）`});
+  const p=state.labs.plt.pts.at(-1)[1];
+  if(p<=181) sig.push({k:'lab',t:`血小板 ${p} ×10⁹/L，已低于 181`,line:'血小板 ≤ 181 ×10⁹/L'});
+  const fb=state.labs.fib.pts.at(-1)[1];
+  if(fb<=3.6) sig.push({k:'lab',t:`纤维蛋白原 ${fb} g/L，已低于 3.6`,line:'纤维蛋白原 ≤ 3.6 g/L'});
+  const fdays=feverDays();
+  if(fdays>=s.fever) sig.push({k:'temp',t:`体温 ≥38.5℃ 已连续 ${fdays} 天`,line:`连续发热 ≥ ${s.fever} 天（你的灵敏度设定）`});
+  const hit=state.symptoms.filter(x=>RED_SYM.includes(x));
+  if(hit.length) sig.push({k:'sym',t:`今日出现：${hit.join('、')}`,line:'MAS 相关临床表现（皮疹 / 出血倾向 / 精神状态改变）'});
+  const level=sig.length>=3?'red':sig.length>=1?'amber':'green';
+  return {level,sig,ratio,span,fdays,p,fb,fl};
+}
+
+/* ============ 渲染 ============ */
+function greet(){
+  const h=new Date().getHours();
+  const g=h<5?'夜深了':h<9?'早上好':h<12?'上午好':h<14?'中午好':h<18?'下午好':h<22?'晚上好':'夜深了';
+  $('#greetHi').textContent=g+'，';
+}
+function latestTemp(){
+  const [am,pm]=state.temps.at(-1);
+  return pm!=null?{v:pm,when:'今晚 '+nowHM()}:{v:am,when:'今早 07:40'};
+}
+function nowHM(){const d=new Date();return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`}
+
+function renderHero(r){
+  const h=$('#hero'); h.dataset.level=r.level;
+  const lt=latestTemp();
+  $('#heroTemp').textContent=lt.v.toFixed(1); $('#heroWhen').textContent=lt.when;
+  $('#heroPill').textContent={green:'平稳',amber:'需留意',red:'建议就医'}[r.level];
+  $('#heroLine').textContent=r.fdays>0?`体温 ≥38.5℃ 已连续 ${r.fdays} 天`:'最近没有达到 38.5℃ 的发热';
+  const brief={
+    green:'最近 14 天没有明显变化。按医嘱继续早晚各记一次就好。',
+    amber:`有 ${r.sig.length} 项信号在变化：${r.sig[0]?.t}。今晚再测一次体温，明天继续观察。`,
+    red:`${r.sig.length} 项信号同时出现，组合符合需要医生尽快评估的情形。建议 24 小时内联系主诊风湿科医生。` // TODO:医生审
+  }[r.level];
+  $('#heroBrief').textContent=brief;
+  $('#bell').classList.toggle('has',r.level==='red'); $('#tabAlert').classList.toggle('has',r.level==='red');
+}
+
+function renderToday(){
+  const [am,pm]=state.temps.at(-1);
+  const done=(am!=null)+(pm!=null)+(state.taken?1:0);
+  $('#todayCount').textContent=`已记 ${done}/3`;
+  $('#todayRows').innerHTML=`
+    <div class="row"><div class="ic">🌤</div><div><div class="t">早上体温</div><div class="s">07:40 · 腋温</div></div><div class="v"><span class="num">${am.toFixed(1)}</span><span style="font-size:12px;color:var(--ink-3)"> ℃</span></div></div>
+    <div class="row"><div class="ic">🌙</div><div><div class="t">晚上体温</div><div class="s">${pm!=null?nowHM()+' · 已记录':'建议 19:00–21:00'}</div></div><div class="v">${pm!=null?`<span class="num">${pm.toFixed(1)}</span><span style="font-size:12px;color:var(--ink-3)"> ℃</span>`:'<span class="pending">待测 →</span>'}</div></div>
+    <div class="row"><div class="ic">💊</div><div><div class="t">泼尼松 5 mg</div><div class="s">减量期第 9 天 · 高危观察窗</div></div><button class="switch" id="taken" role="switch" aria-checked="${state.taken}" aria-label="今日已服药"></button></div>`;
+  $('#taken').onclick=e=>{state.taken=!state.taken;renderAll()};
+  // 7 天柱状
+  const W=320,H=110,pl=6,pb=22,pt=8,bw=28;
+  const days=state.temps.slice(-7).map((d,i)=>({i,max:Math.max(...d.filter(v=>v!=null))}));
+  const ymin=36,ymax=40,Y=v=>pt+(1-(v-ymin)/(ymax-ymin))*(H-pt-pb);
+  const X=i=>pl+i*((W-pl*2)/7)+((W-pl*2)/7-bw)/2;
+  let s=`<line x1="0" x2="${W}" y1="${Y(37.3)}" y2="${Y(37.3)}" stroke="#C9C1B2" stroke-dasharray="3 4"/><line x1="0" x2="${W}" y1="${Y(38.5)}" y2="${Y(38.5)}" stroke="#B3261E" stroke-opacity=".55" stroke-dasharray="3 4"/>`;
+  days.forEach(d=>{const col=d.max>=38.5?'#B3261E':d.max>=37.3?'#D9A24A':'#0E6B55';
+    s+=`<rect x="${X(d.i)}" y="${Y(d.max)}" width="${bw}" height="${H-pb-Y(d.max)}" rx="7" fill="${col}"/>
+        <text x="${X(d.i)+bw/2}" y="${H-6}" font-size="10.5" text-anchor="middle" fill="#6B746E" font-family="inherit">${d.i===6?'今天':fmtD(d.i-6)}</text>
+        <text x="${X(d.i)+bw/2}" y="${Y(d.max)-5}" font-size="10.5" text-anchor="middle" fill="#1B1F1D" font-family="Fraunces,serif">${d.max.toFixed(1)}</text>`});
+  $('#weekChart').innerHTML=s;
+  $('#weekRange').textContent=`${fmtD(-6)} – 今天`;
+}
+
+/* ---- 通用折线图：p=指标对象，x0=横轴起点（天，负数） ---- */
+function chart(p,x0){
+  const W=320,H=130,pl=8,pr=8,pt=10,pb=34,x1=0;
+  const X=d=>pl+(d-x0)/(x1-x0)*(W-pl-pr);
+  const clamp=v=>Math.min(Math.max(v,p.ymin),p.ymax);
+  const Y=v=>pt+(1-(clamp(v)-p.ymin)/(p.ymax-p.ymin))*(H-pt-pb);
+  let s='';
+  // 浅色带：常见正常区间
+  s+=`<rect x="${pl}" y="${Y(p.band[1])}" width="${W-pl-pr}" height="${Y(p.band[0])-Y(p.band[1])}" fill="#0E6B55" fill-opacity=".07"/>`;
+  // 虚线：分类标准门槛
+  s+=`<line x1="${pl}" x2="${W-pr}" y1="${Y(p.line)}" y2="${Y(p.line)}" stroke="#B3261E" stroke-opacity=".6" stroke-dasharray="3 4"/>
+      <text x="${W-pr}" y="${Y(p.line)-4}" font-size="10" text-anchor="end" fill="#B3261E" font-family="Fraunces,serif">${p.line}</text>`;
+  // 实线 + 点
+  const pts=p.pts.filter(([,v])=>v!=null&&isFinite(v));
+  s+=`<polyline points="${pts.map(([d,v])=>`${X(d)},${Y(v)}`).join(' ')}" fill="none" stroke="#1B1F1D" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  pts.forEach(([d,v],i)=>{
+    const bad=p.worseUp?v>p.line:v<=p.line, last=i===pts.length-1;
+    s+=`<circle cx="${X(d)}" cy="${Y(v)}" r="${last?5:3.5}" fill="${bad?'#B3261E':'#0E6B55'}" stroke="#FFFDF9" stroke-width="2"/>`;
+    if(last) s+=`<text x="${X(d)}" y="${Y(v)-10}" font-size="11" text-anchor="end" fill="#1B1F1D" font-family="Fraunces,serif">${typeof v==='number'&&!Number.isInteger(v)?v.toFixed(1):v.toLocaleString()}</text>`;
+  });
+  // 底部事件标记
+  state.events.filter(([d])=>d>=x0).forEach(([d,ic,label])=>{
+    s+=`<line x1="${X(d)}" x2="${X(d)}" y1="${H-pb}" y2="${H-pb+6}" stroke="#C9C1B2"/>
+        <text x="${X(d)}" y="${H-19}" font-size="11" text-anchor="middle"><title>${fmtD(d)} ${label}</title>${ic}</text>`;
+  });
+  // 横轴标签
+  const mid=Math.round(x0/2);
+  [[x0,'start'],[mid,'middle'],[0,'end']].forEach(([d,a])=>{
+    s+=`<text x="${X(d)}" y="${H-5}" font-size="10" text-anchor="${a}" fill="#6B746E">${d===0?'今天':fmtD(d)}</text>`;
+  });
+  return s;
+}
+
+/* ---- 趋势页：4 张卡 ---- */
+function renderMetrics(){
+  const n=state.tempRange||14;
+  const tm={name:'体温',unit:'℃',line:38.5,band:[36.3,37.3],ymin:36,ymax:40,worseUp:true,
+    pts:state.temps.slice(-n).map((d,i)=>[i-(n-1),Math.max(...d.filter(v=>v!=null))])};
+  const last=tm.pts.at(-1)[1], prev=tm.pts.at(-2)[1], dT=last-prev;
+  let html=`
+  <div class="metric">
+    <div class="m-head"><span class="name">体温</span>
+      <div class="seg" id="tSeg" role="group" aria-label="时间范围">
+        <button data-n="7" aria-pressed="${n===7}">7 天</button><button data-n="14" aria-pressed="${n===14}">14 天</button>
+      </div></div>
+    <div class="m-val"><span class="num">${last.toFixed(1)}</span><span class="unit">℃ · 今日最高</span>
+      <span class="delta ${dT>0.05?'up':dT<-0.05?'down':''}">${dT>0?'+':''}${dT.toFixed(1)} vs 昨天</span></div>
+    <svg viewBox="0 0 320 130" role="img" aria-label="近 ${n} 天每日最高体温折线图">${chart(tm,-(n-1))}</svg>
+    <div class="m-foot"><span>虚线 38.5 ℃ · 浅带 36.3–37.3</span><span>${fmtD(-(n-1))} – 今天</span></div>
+  </div>`;
+  for(const [k,m] of Object.entries(state.labs)){
+    const [ld,v]=m.pts.at(-1), [,pv]=m.pts.at(-2);
+    const bad=m.worseUp?v>m.line:v<=m.line;
+    const near=!bad&&(m.worseUp?v>m.line*0.8:v<=m.line*1.1);
+    const d=v-pv, worsening=m.worseUp?d>0:d<0;
+    const cls=worsening?(bad?'up':'warn'):'down';
+    const dtxt=k==='ferritin'?`×${(v/pv).toFixed(1)} vs 上次`:`${d>0?'+':''}${k==='fib'?d.toFixed(1):d} vs 上次`;
+    html+=`
+    <div class="metric">
+      <div class="m-head"><span class="name">${m.name}</span><span class="tag">门诊 ${fmtD(ld)}</span></div>
+      <div class="m-val"><span class="num">${v.toLocaleString()}</span><span class="unit">${m.unit}</span><span class="delta ${cls}">${dtxt}</span></div>
+      <svg viewBox="0 0 320 130" role="img" aria-label="${m.name}近 30 天趋势图">${chart(m,-30)}</svg>
+      <div class="m-foot"><span>门槛 ${m.worseUp?'>':'≤'} ${m.line}${bad?' · <b style="color:var(--red)">已越线</b>':near?' · 接近门槛':''}</span><span>浅带 ${m.band[0]}–${m.band[1]} ${m.unit}</span></div>
+    </div>`;
+  }
+  $('#metrics').innerHTML=html;
+  $('#tSeg').onclick=e=>{const b=e.target.closest('button');if(!b)return;state.tempRange=+b.dataset.n;renderMetrics()};
+}
+
+/* ---- 预警页：证据链五段式 ---- */
+const SENS_DETAIL=[
+  '只在变化非常明显时提醒：铁蛋白 7 天内升幅 ≥ 3 倍，或 ≥38.5℃ 连续 ≥ 3 天。提醒更少，但漏报风险相对更高。',
+  '默认设置：铁蛋白 7 天内升幅 ≥ 2 倍，或 ≥38.5℃ 连续 ≥ 2 天。',
+  '更早提醒：铁蛋白 7 天内升幅 ≥ 1.5 倍，或 ≥38.5℃ 出现 1 天即计为信号。误报会更多。'
+];
+// TODO:医生审 —— 以下行动建议文案为保守版，上线前需医学顾问逐句审核
+const ADVICE={
+  green:'按医嘱继续早晚各记一次体温。下次门诊化验后把结果录进来，趋势线会自动更新。',
+  amber:'今晚再测一次体温。若 ≥38.5℃，或出现皮疹、出血点/瘀斑、精神差/嗜睡，请当天联系主诊医生。下次门诊可把这页趋势给医生看。',
+  red:'建议 24 小时内联系主诊风湿科医生，告知上述信号，并询问是否需要复查血常规、铁蛋白、凝血功能和肝功能。如出现精神差/嗜睡、出血点、持续高热不退，请直接前往急诊。请勿自行调整激素剂量。'
+};
+function renderAlert(r){
+  const s=SENS[state.sens];
+  const col={green:'var(--green)',amber:'var(--amber)',red:'var(--red)'}[r.level];
+  const title={green:'目前没有触发预警',amber:`${r.sig.length} 项信号在变化，尚未达到建议就医`,red:`${r.sig.length} 项信号同时出现 · 建议 24 小时内联系医生`}[r.level];
+  const obs=r.sig.length?`<ul>${r.sig.map(x=>`<li>${x.t}</li>`).join('')}</ul>`:'近 14 天体温、化验值都在各自的线以内，没有需要特别留意的组合。';
+  const lines=r.sig.length?`<ul>${r.sig.map(x=>`<li>${x.line}</li>`).join('')}</ul>`:'无。';
+  const feverNote=r.fdays>0?`已连续 ${r.fdays} 天`:'目前未达连续发热';
+  $('#alertCard').innerHTML=`
+    <div class="alert-head"><span class="lvl" style="background:${col}"></span>
+      <div><h3>${title}</h3><p>${fmtD(0)} ${nowHM()} 评估 · 灵敏度「${s.name}」</p></div></div>
+    <ol class="chain">
+      <li data-n="1"><div class="k">观察到什么</div><div class="d">${obs}</div></li>
+      <li data-n="2"><div class="k">越过了哪条线</div><div class="d">${lines}</div></li>
+      <li data-n="3"><div class="k">这些线从哪来</div><div class="d">
+        铁蛋白 684、血小板 181、纤维蛋白原 3.6 这三条线是固定的，来自分类标准；「7 天内升幅」和「连续发热天数」是暖哨的趋势规则，由下方灵敏度控制。
+        <span class="cite">2016 PRINTO/ACR/EULAR sJIA 并发 MAS 分类标准：发热的 sJIA 患儿，铁蛋白 &gt; 684 ng/mL，且同时满足以下至少 2 项——血小板 ≤ 181 ×10⁹/L、AST &gt; 48 U/L、甘油三酯 &gt; 156 mg/dL、纤维蛋白原 ≤ 3.6 g/L。该标准用于分类而非诊断。</span>
+      </div></div></li>
+      <li data-n="4"><div class="k">背景</div><div class="d">
+        泼尼松减量第 9 天（9/28 由 7.5 → 5 mg），处于高危观察窗；最近一次化验 ${fmtD(state.labs.ferritin.pts.at(-1)[0])}，距今 ${-state.labs.ferritin.pts.at(-1)[0]} 天；发热${feverNote}。AST、甘油三酯本期未纳入（二期），因此暖哨<b>不判断</b>是否满足分类标准，只提示"趋势和组合值得让医生看一眼"。
+      </div></li>
+      <li data-n="5"><div class="k">建议怎么做 <span class="tag">文案待医学顾问审核</span></div><div class="d">${ADVICE[r.level]}</div></li>
+    </ol>
+    <div class="alert-act">
+      <button class="pri" id="alertCall">联系主诊医生</button>
+      <button class="sec" id="onePage">生成就诊摘要</button>
+    </div>`;
+  $('#alertCall').onclick=callDoctor;
+  $('#onePage').onclick=()=>toast('「就诊一页通」二期上线，先把趋势页截图给医生也可以');
+}
+function renderSens(r){
+  const s=SENS[state.sens];
+  $('#sens').value=state.sens;
+  $('#sensName').textContent=s.name;
+  $('#sensFreq').textContent=`预计警报频率 ${s.freq}`;
+  $('#sensDetail').innerHTML=`${SENS_DETAIL[state.sens]}<br>分类标准门槛（684 / 181 / 3.6）不随灵敏度变化。当前设定下触发 <b>${r.sig.length}</b> 项信号。`;
+}
+
+/* ---- 记录抽屉 ---- */
+const draft={t:37.8,sym:new Set(),taken:true};
+function drawT(){$('#tVal').innerHTML=`${draft.t.toFixed(1)}<small>℃</small>`;
+  $$('#tQuick .chip').forEach(c=>c.setAttribute('aria-pressed',String(+c.dataset.t===+draft.t.toFixed(1))))}
+function openSheet(){
+  const [am,pm]=state.temps.at(-1);
+  draft.t=pm??am; draft.sym=new Set(state.symptoms); draft.taken=state.taken;
+  drawT();
+  $$('#symChips .chip').forEach(c=>c.setAttribute('aria-pressed',String(draft.sym.has(c.dataset.s))));
+  $('#shTaken').setAttribute('aria-checked',String(draft.taken));
+  $('#shTime').textContent=`${fmtD(0)} ${nowHM()}`;
+  $('#app').classList.add('sheet-open');
+  setTimeout(()=>$('#tUp').focus(),450);
+}
+function closeSheet(){$('#app').classList.remove('sheet-open');$('#fab').focus()}
+$('#tDown').onclick=()=>{draft.t=Math.max(35,+(draft.t-0.1).toFixed(1));drawT()};
+$('#tUp').onclick=()=>{draft.t=Math.min(42,+(draft.t+0.1).toFixed(1));drawT()};
+$('#tQuick').onclick=e=>{const c=e.target.closest('.chip');if(!c)return;draft.t=+c.dataset.t;drawT()};
+$('#symChips').onclick=e=>{const c=e.target.closest('.chip');if(!c)return;
+  const on=c.getAttribute('aria-pressed')==='true';c.setAttribute('aria-pressed',String(!on));
+  on?draft.sym.delete(c.dataset.s):draft.sym.add(c.dataset.s)};
+$('#shTaken').onclick=e=>{draft.taken=!draft.taken;e.currentTarget.setAttribute('aria-checked',String(draft.taken))};
+$('#save').onclick=()=>{
+  const before=evaluate().level;
+  state.temps.at(-1)[1]=draft.t; state.symptoms=[...draft.sym]; state.taken=draft.taken;
+  closeSheet(); go('v-today'); renderAll();
+  const after=evaluate().level, name={green:'平稳',amber:'需留意',red:'建议就医'};
+  toast(after!==before?`已保存 · 状态更新为「${name[after]}」`:'已保存今晚记录');
+};
+$('#fab').onclick=openSheet;
+$('#scrim').onclick=closeSheet;
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#app').classList.contains('sheet-open'))closeSheet()});
+
+/* ---- 导航 / 杂项 ---- */
+function go(id){
+  $$('.view').forEach(v=>v.classList.toggle('is-active',v.id===id));
+  $$('.tab').forEach(t=>t.dataset.go===id?t.setAttribute('aria-current','page'):t.removeAttribute('aria-current'));
+  $('#main').scrollTop=0;
+}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-go]');if(b)go(b.dataset.go)});
+$('#bell').onclick=()=>go('v-alert');
+function callDoctor(){toast('演示版：此处将拨打/发送消息给主诊医生')}
+$('#callDoc').onclick=callDoctor;
+$('#sens').addEventListener('input',e=>{state.sens=+e.target.value;renderAll()});
+
+let toastTimer;
+function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2600)}
+
+/* ---- 总渲染 ---- */
+function renderAll(){
+  const r=evaluate();
+  renderHero(r); renderToday(); renderMetrics(); renderAlert(r); renderSens(r);
+}
+greet(); renderAll();
+</script>
+</body>
+</html>

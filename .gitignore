@@ -1,0 +1,22 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+
+dist/
+build/
+.next/
+coverage/
+*.local
+.test-output/
+
+.zion-mcp/
+.zcode/
+
+# Private writing. Publish READMEs only.
+*.md
+!README.md
+!README.zh-CN.md
+reference/
