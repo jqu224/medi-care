@@ -606,7 +606,7 @@ export default function Workspace() {
               <Fragment key={t}>
                 <button
                   className={tab === t ? "active" : ""}
-                  onClick={(e) => openTab(t, e.currentTarget)}
+                  onClick={() => openTab(t)}
                 >
                   <Icon size={22} />
                   {readonly && t === "首页" ? "概览" : t}
@@ -619,10 +619,9 @@ export default function Workspace() {
                         className={
                           tab === "学习" && learnSection === s ? "active" : ""
                         }
-                        onClick={(e) => {
+                        onClick={() => {
                           setLearnSection(s);
-                          if (tab !== "学习" || showList)
-                            openTab("学习", e.currentTarget);
+                          if (tab !== "学习" || showList) openTab("学习");
                         }}
                       >
                         {s}
@@ -791,16 +790,13 @@ export default function Workspace() {
                         </div>
                         <button
                           className={index === 0 ? "primary" : "text-button"}
-                          onClick={(e) => {
+                          onClick={() => {
                             if (readonly) {
-                              openTab(
-                                todo.kind === "plan" ? "照护" : "记录",
-                                e.currentTarget,
-                              );
+                              openTab(todo.kind === "plan" ? "照护" : "记录");
                               return;
                             }
                             if (todo.kind === "plan") {
-                              openTab("照护", e.currentTarget);
+                              openTab("照护");
                               return;
                             }
                             const monitor = patient.monitors.find(
@@ -888,7 +884,7 @@ export default function Workspace() {
                   <section className="panel">
                     <div className="section-head">
                       <h2>今日照护</h2>
-                      <button onClick={(e) => openTab("照护", e.currentTarget)}>
+                      <button onClick={() => openTab("照护")}>
                         查看全部 <ArrowUpRight />
                       </button>
                     </div>
@@ -906,7 +902,7 @@ export default function Workspace() {
                   <section className="panel">
                     <div className="section-head">
                       <h2>最近事件</h2>
-                      <button onClick={(e) => openTab("记录", e.currentTarget)}>
+                      <button onClick={() => openTab("记录")}>
                         时间线 <ArrowUpRight />
                       </button>
                     </div>
@@ -1026,7 +1022,7 @@ export default function Workspace() {
             <button
               key={t}
               className={tab === t ? "active" : ""}
-              onClick={(e) => openTab(t as Tab, e.currentTarget)}
+              onClick={() => openTab(t as Tab)}
             >
               {(() => {
                 const Icon = icons[t as Tab];
