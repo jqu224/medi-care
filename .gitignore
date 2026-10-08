@@ -16,6 +16,12 @@ coverage/
 .preview/
 app/preview.html
 
+# Local OCR / case-ref audit scaffolding — keep on disk, never ship
+app/scripts/batch-case-ref-scan.mjs
+app/scripts/browser-audit-one.mjs
+app/scripts/upload-one-scan.mjs
+app/scripts/preview-assistant.tsx
+
 # Local agent, MCP, and review artifacts
 .impeccable/
 .shots/
