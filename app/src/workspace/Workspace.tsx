@@ -6,7 +6,7 @@ import { careTodos } from "./careTodos";
 import { summarizeHistory } from "./historySummary";
 import { benchmarkFields, listedBenchmarks, rateObservation } from "./benchmark";
 import { recordDates } from "./recordDates";
-import Learning from "./Learning";
+import Learning, { Assistant } from "./Learning";
 import { sections, type LearningSection } from "./learningContent";
 import { DEFAULT_SETTINGS, METRICS, effThreshold } from "../engine/config";
 import { flushSync } from "react-dom";
@@ -15,12 +15,12 @@ import Calendar from "./Calendar";
 import { Fragment, useState, useRef, useEffect } from "react";
 import {
   BookOpen,
+  ChatCircle,
   CaretDown,
   SignOut,
   House,
   Notebook,
   Plus,
-  ChartLineUp,
   Heart,
   ArrowRight,
   X,
@@ -61,6 +61,7 @@ import {
   ChartLine,
   Heart as LucideHeart,
   House as LucideHouse,
+  MessageCircle,
   Notebook as LucideNotebook,
   TestTube,
   Thermometer,
@@ -108,7 +109,9 @@ import type {
 } from "./model";
 import "./workspace.css";
 import "./trendDensity.css";
-type Tab = "首页" | "记录" | "趋势" | "照护" | "学习";
+type Tab = "首页" | "记录" | "照护" | "学习" | "问助手";
+type RecordSection = "时间线" | "趋势";
+const recordSections: RecordSection[] = ["时间线", "趋势"];
 type ModalState = {
   type: "new" | "monitor" | "observation" | "event" | "plan" | "metric" | "profile";
   monitor?: Monitor;
@@ -148,16 +151,16 @@ function latest(p: Patient, id: string) {
 const icons = {
   首页: House,
   记录: Notebook,
-  趋势: ChartLineUp,
   照护: Heart,
   学习: BookOpen,
+  问助手: ChatCircle,
 };
 const pageMarks: Record<Tab, LucideIcon> = {
   首页: LucideHouse,
   记录: LucideNotebook,
-  趋势: ChartLine,
   照护: LucideHeart,
   学习: LucideBookOpen,
+  问助手: MessageCircle,
 };
 export default function Workspace() {
   const [initial] = useState(() => {
@@ -178,6 +181,7 @@ export default function Workspace() {
     () => read<Role | null>("nuanshao:demo-session-v1", null) === "doctor",
   );
   const [tab, setTab] = useState<Tab>("首页");
+  const [recordSection, setRecordSection] = useState<RecordSection>("时间线");
   const [learnSection, setLearnSection] = useState<LearningSection>("知识卡片");
   const [modal, setModal] = useState<ModalState | null>(null);
   const [error, setError] = useState(initial.error);
@@ -611,6 +615,22 @@ export default function Workspace() {
                   <Icon size={22} />
                   {readonly && t === "首页" ? "概览" : t}
                 </button>
+                {t === "记录" && tab === "记录" && (
+                  <div className="sub-nav" role="group" aria-label="记录栏目">
+                    {recordSections.map((s) => (
+                      <button
+                        key={s}
+                        className={recordSection === s ? "active" : ""}
+                        onClick={() => {
+                          setRecordSection(s);
+                          if (showList) openTab("记录");
+                        }}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {t === "学习" && tab === "学习" && (
                   <div className="sub-nav" role="group" aria-label="学习栏目">
                     {sections.map((s) => (
@@ -678,7 +698,10 @@ export default function Workspace() {
             aria-busy={shell || undefined}
           >
             {shell ? (
-              <PageSkeleton tab={tab} />
+              <PageSkeleton
+                tab={tab}
+                trends={tab === "记录" && recordSection === "趋势"}
+              />
             ) : (
               <>
             <div className="page-heading">
@@ -686,17 +709,27 @@ export default function Workspace() {
                 <h1>
                   {tab === "学习"
                     ? "学习中心"
-                    : readonly
-                      ? patient.name
-                      : tab === "首页"
+                    : tab === "问助手"
+                      ? "问助手"
+                      : readonly
                         ? patient.name
-                        : tab}
+                        : tab === "首页"
+                          ? patient.name
+                          : tab}
                 </h1>
-                <span className={tab === "学习" ? "learning-slogan" : undefined}>
+                <span
+                  className={
+                    tab === "学习" || tab === "问助手"
+                      ? "learning-slogan"
+                      : undefined
+                  }
+                >
                   {tab === "学习"
                     ? "更懂患者，才能够更好地照顾患者"
-                    : patient.description}{" "}
-                  {readonly && tab !== "学习" && (
+                    : tab === "问助手"
+                      ? "解释概念、检查名称和记录方法。不诊断，也不建议调整药物。"
+                      : patient.description}{" "}
+                  {readonly && tab !== "学习" && tab !== "问助手" && (
                     <b className="readonly">只读</b>
                   )}
                 </span>
@@ -902,7 +935,12 @@ export default function Workspace() {
                   <section className="panel">
                     <div className="section-head">
                       <h2>最近事件</h2>
-                      <button onClick={() => openTab("记录")}>
+                      <button
+                        onClick={() => {
+                          setRecordSection("时间线");
+                          openTab("记录");
+                        }}
+                      >
                         时间线 <ArrowUpRight />
                       </button>
                     </div>
@@ -919,31 +957,44 @@ export default function Workspace() {
                 </div>
               </>
             )}
-            {(tab === "记录" || tab === "趋势") && (
-              <History
-                key={patient.id + tab}
-                patient={patient}
-                metrics={db.metrics}
-                trends={tab === "趋势"}
-                readonly={readonly}
-                actor={actor}
-                onEditObservation={(observation) =>
-                  setModal({ type: "observation", observation })
-                }
-                onEditEvent={(event) => setModal({ type: "event", event })}
-                onDelete={(kind, id) =>
-                  perform(() => {
-                    if (confirm("删除这条记录？此操作会同步更新趋势。"))
-                      update((p) => {
-                        if (kind === "observation")
-                          p.observations = p.observations.filter(
-                            (o) => o.id !== id,
-                          );
-                        else p.events = p.events.filter((e) => e.id !== id);
-                      });
-                  })
-                }
-              />
+            {tab === "记录" && (
+              <>
+                <div className="record-tabs" role="group" aria-label="记录栏目">
+                  {recordSections.map((s) => (
+                    <button
+                      key={s}
+                      aria-pressed={recordSection === s}
+                      onClick={() => setRecordSection(s)}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                <History
+                  key={patient.id + recordSection}
+                  patient={patient}
+                  metrics={db.metrics}
+                  trends={recordSection === "趋势"}
+                  readonly={readonly}
+                  actor={actor}
+                  onEditObservation={(observation) =>
+                    setModal({ type: "observation", observation })
+                  }
+                  onEditEvent={(event) => setModal({ type: "event", event })}
+                  onDelete={(kind, id) =>
+                    perform(() => {
+                      if (confirm("删除这条记录？此操作会同步更新趋势。"))
+                        update((p) => {
+                          if (kind === "observation")
+                            p.observations = p.observations.filter(
+                              (o) => o.id !== id,
+                            );
+                          else p.events = p.events.filter((e) => e.id !== id);
+                        });
+                    })
+                  }
+                />
+              </>
             )}
             {tab === "学习" && (
               <Learning
@@ -953,6 +1004,7 @@ export default function Workspace() {
                 onSectionChange={setLearnSection}
               />
             )}
+            {tab === "问助手" && <Assistant />}
             {tab === "照护" && (
               <section className="panel">
                 <div className="section-head">
@@ -992,7 +1044,10 @@ export default function Workspace() {
           本平台为辅助记录与预警工具，不替代专业诊疗判断
         </footer>
         {(() => {
-          const Mark = pageMarks[tab];
+          const Mark =
+            tab === "记录" && recordSection === "趋势"
+              ? ChartLine
+              : pageMarks[tab];
           return (
             <div className="page-mark" aria-hidden="true">
               <Mark size={320} strokeWidth={1.25} />
@@ -1005,9 +1060,9 @@ export default function Workspace() {
           "首页",
           "记录",
           ...(!readonly ? ["+"] : []),
-          "趋势",
           "照护",
           "学习",
+          "问助手",
         ].map((t) =>
           t === "+" ? (
             <button
@@ -1419,16 +1474,18 @@ function Spark({ values }: { values: number[] }) {
     </svg>
   );
 }
-function PageSkeleton({ tab }: { tab: Tab }) {
+function PageSkeleton({ tab, trends }: { tab: Tab; trends?: boolean }) {
   const kind =
     tab === "首页"
       ? "home"
       : tab === "记录"
-        ? "record"
-        : tab === "趋势"
+        ? trends
           ? "trend"
-          : tab === "照护"
-            ? "care"
+          : "record"
+        : tab === "照护"
+          ? "care"
+          : tab === "问助手"
+            ? "ask"
             : "learn";
   return (
     <div className={"page-skeleton sk-" + kind} aria-hidden="true">
@@ -1478,7 +1535,7 @@ function PageSkeleton({ tab }: { tab: Tab }) {
         </div>
       )}
       {kind === "care" && <span className="sk-list" />}
-      {kind === "learn" && (
+      {(kind === "learn" || kind === "ask") && (
         <>
           <span className="sk-strip" />
           <div className="sk-row">

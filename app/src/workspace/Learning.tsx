@@ -20,6 +20,95 @@ const empty: Progress = { read: [], correct: [], words: [] };
 const ASK_ENDPOINT =
   "https://zion-app.functorz.com/zero/DqQnbOV5vvJ/api/graphql-v2";
 const ASK_FLOW_ID = "a60f19aa-6500-4de9-a5e9-dd1c9322d5bd";
+const assistantPrompts = [
+  "铁蛋白这项检查在看什么？",
+  "糖化血红蛋白和当天血糖有什么不同？",
+  "照护计划和实际发生的事，为什么要分开记？",
+  "关节肿痛应该怎么记录？",
+];
+
+export function Assistant() {
+  const [askText, setAskText] = useState("");
+  const [askThread, setAskThread] = useState<
+    { role: "user" | "assistant"; text: string }[]
+  >([]);
+  const [askPending, setAskPending] = useState(false);
+  const ask = (raw: string) => {
+    const question = raw.trim();
+    if (!question || askPending) return;
+    setAskText("");
+    setAskPending(true);
+    setAskThread((thread) => [...thread, { role: "user", text: question }]);
+    askConcept(question).then(
+      (answer) => {
+        setAskThread((thread) => [
+          ...thread,
+          { role: "assistant", text: answer },
+        ]);
+        setAskPending(false);
+      },
+      () => {
+        setAskThread((thread) => [
+          ...thread,
+          { role: "assistant", text: "暂时没有回答，请稍后再试。" },
+        ]);
+        setAskPending(false);
+      },
+    );
+  };
+  return (
+    <article className="learning-ask" aria-label="问助手">
+      {askThread.length > 0 && (
+        <div className="assistant-thread" role="log" aria-live="polite">
+          {askThread.map((message, index) => (
+            <p key={index} className={message.role}>
+              {message.text}
+            </p>
+          ))}
+          {askPending && <p className="assistant pending">正在回答</p>}
+        </div>
+      )}
+      <div className="assistant-prompts" role="group" aria-label="可以这样问">
+        <span>可以这样问</span>
+        {assistantPrompts.map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            disabled={askPending}
+            onClick={() => ask(prompt)}
+          >
+            {prompt}
+          </button>
+        ))}
+      </div>
+      <form
+        className="assistant-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          ask(askText);
+        }}
+      >
+        <textarea
+          value={askText}
+          maxLength={500}
+          rows={2}
+          placeholder="问一个概念、检查名称，或记录方法"
+          aria-label="向助手提问"
+          onChange={(event) => setAskText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              ask(askText);
+            }
+          }}
+        />
+        <button className="primary" disabled={askPending || !askText.trim()}>
+          发送
+        </button>
+      </form>
+    </article>
+  );
+}
 
 async function askConcept(question: string): Promise<string> {
   const response = await fetch(ASK_ENDPOINT, {
@@ -72,10 +161,6 @@ export default function Learning({
   const [hint, setHint] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const [askText, setAskText] = useState("");
-  const [askAnswer, setAskAnswer] = useState("");
-  const [askError, setAskError] = useState("");
-  const [askPending, setAskPending] = useState(false);
   const save = (kind: keyof Progress, id: string) => {
     const next = { ...progress, [kind]: [...new Set([...progress[kind], id])] };
     setProgress(next);
@@ -209,7 +294,6 @@ export default function Learning({
         </>
       )}
       {section === "问答练习" && (
-        <>
         <article className="learning-exercise">
           <div
             className="learning-topics quiz-sets"
@@ -303,54 +387,6 @@ export default function Learning({
             )}
           </div>
         </article>
-        <form
-          className="learning-ask"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const question = askText.trim();
-            if (!question || askPending) return;
-            setAskPending(true);
-            setAskError("");
-            setAskAnswer("");
-            askConcept(question).then(
-              (answer) => {
-                setAskAnswer(answer);
-                setAskPending(false);
-              },
-              () => {
-                setAskError("暂时没有回答，请稍后再试。");
-                setAskPending(false);
-              },
-            );
-          }}
-        >
-          <h3>接着问一句</h3>
-          <p>只解释学习中心里的概念。不诊断，也不建议调整药物。</p>
-          <textarea
-            value={askText}
-            maxLength={500}
-            rows={3}
-            placeholder="例如：血氧饱和度是什么？"
-            aria-label="向学习助手提问"
-            onChange={(event) => setAskText(event.target.value)}
-          />
-          <div className="exercise-actions">
-            <button className="primary" disabled={askPending || !askText.trim()}>
-              {askPending ? "正在回答" : "提问"}
-            </button>
-          </div>
-          {askAnswer && (
-            <div className="learning-feedback" role="status">
-              <p>{askAnswer}</p>
-            </div>
-          )}
-          {askError && (
-            <p className="learning-ask-error" role="alert">
-              {askError}
-            </p>
-          )}
-        </form>
-        </>
       )}
       {section === "术语猜词" && (
         <article className="learning-exercise word-exercise">
