@@ -1050,9 +1050,13 @@ button:disabled {
     gap: 16px;
   }
   /* mobile-nav: see consolidated block @media (max-width: 767px) ~1938 */
+  /* UA dialog 自带 max-width: calc(100% - 2em)≈少 32px；只设 width:100% + left:0
+     会左边顶格、右边留缝。清掉 max-width，底栏才真正铺满。 */
   .modal {
     inset: auto 0 0;
     width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
     max-height: 90dvh;
     border-radius: 25px 25px 0 0;
     margin: 0;
@@ -2608,12 +2612,13 @@ button:disabled {
 .scan-item.is-reviewed .scan-review-ok { background:#e7f0ea; border-color:#8cc7b0; color:#146b60; }
 .scan-doctype { display:grid; gap:6px; font-size:13px; color:#314c42; }
 .scan-doctype select { min-height:40px; padding:8px 10px; border:1px solid #d9e3dd; border-radius:8px; background:#fff; font-size:14px; }
-/* AntD-like Steps：圆标块 + 连接线，当前高亮，已完成可点回 */
+/* 左栏竖排 Steps：圆标块 + 竖连接线，当前高亮，已完成可点回 */
 .scan-nav-steps {
-  display:flex; align-items:stretch; gap:0; margin:0 0 4px; padding:0;
+  display:flex; flex-direction:column; align-items:stretch; gap:0;
+  margin:8px 0 0; padding:0;
 }
 .scan-nav-step {
-  flex:1 1 0; min-width:0; display:flex; align-items:center; gap:10px;
+  flex:0 0 auto; min-width:0; display:flex; align-items:center; gap:10px;
   margin:0; padding:10px 12px; border:1.5px solid #d9e3dd; border-radius:12px;
   background:#f7faf8; color:#5d6d69; text-align:left; cursor:default;
   font:inherit; transition:border-color .15s, background .15s, box-shadow .15s, color .15s;
@@ -2649,13 +2654,13 @@ button:disabled {
 .scan-nav-copy { display:grid; gap:1px; min-width:0; }
 .scan-nav-copy strong {
   font-size:13px; font-weight:650; line-height:1.25;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  overflow:hidden; text-overflow:ellipsis;
 }
 .scan-nav-copy small { font-size:11px; color:#6b7c74; line-height:1.3; }
 .scan-nav-step.is-process .scan-nav-copy small { color:#3d5c50; }
 .scan-nav-tail {
-  flex:0 0 18px; align-self:center; height:2px; margin:0 4px;
-  background:#d9e3dd; border-radius:1px;
+  flex:0 0 12px; width:2px; height:12px; align-self:flex-start;
+  margin:2px 0 2px 25px; background:#d9e3dd; border-radius:1px;
 }
 .scan-nav-tail.is-done { background:#146b60; }
 .scan-classify-hint { margin:0; padding:10px 12px; border-radius:10px; background:#eef6f1; color:#314c42; font-size:14px; }
@@ -2674,20 +2679,20 @@ button:disabled {
   list-style:none; margin:0; padding:0;
   display:grid; gap:8px;
 }
-/* 展开：标题紧贴正文，像 title + subtitle，不要大段空白 */
+/* 展开：标题与动作同一行，正文紧贴，无中间大空白 */
 .scan-section-card {
-  display:grid; gap:4px;
-  padding:8px 10px;
+  display:grid; gap:2px;
+  padding:6px 8px;
   border:1px solid #e5e7de; border-radius:12px;
   background:#fbfcf9;
 }
 .scan-section-card-top {
-  display:grid;
-  grid-template-columns:minmax(0,1fr) auto auto;
-  gap:6px; align-items:center;
+  display:flex; flex-wrap:nowrap; gap:4px; align-items:center;
+  min-width:0;
 }
 .scan-section-title {
-  width:100%; min-height:32px; padding:4px 8px;
+  flex:1 1 auto; min-width:0; width:auto;
+  min-height:32px; padding:2px 6px;
   border:0; border-radius:6px; background:transparent;
   font:inherit; font-size:13px; font-weight:700; color:#174e3b;
 }
@@ -2696,40 +2701,75 @@ button:disabled {
 }
 .scan-section-title::placeholder { color:#8a9a92; font-weight:500; }
 .scan-section-body {
-  width:100%; min-height:44px; margin:0; padding:6px 8px;
+  width:100%; min-height:40px; margin:0; padding:4px 6px;
   border:1px solid #e5e7de; border-radius:8px;
-  background:#fff; font:inherit; font-size:13px; line-height:1.45;
+  background:#fff; font:inherit; font-size:13px; line-height:1.4;
   color:#243d35; resize:vertical;
 }
 .scan-section-body:focus { outline:2px solid #146b60; outline-offset:0; border-color:#146b60; }
-.scan-section-ok {
-  flex:0 0 auto; min-height:30px; padding:4px 10px;
-  border:1px solid #b9cdc3; border-radius:999px;
-  background:#fff; color:#314c42; font-size:11px; font-weight:700;
-  letter-spacing:.02em; cursor:pointer;
+/* OK / 删除：同尺寸图标按钮并排，不换行 */
+.scan-section-actions {
+  flex:0 0 auto; display:inline-flex; flex-wrap:nowrap;
+  gap:2px; align-items:center;
 }
-.scan-section-ok:hover, .scan-section-ok:focus-visible { border-color:#146b60; color:#146b60; }
-.scan-section-ok.is-on {
+.scan-section-iconbtn {
+  flex:0 0 auto; box-sizing:border-box;
+  width:30px; height:30px; padding:0; margin:0;
+  display:inline-grid; place-items:center;
+  border:1px solid #d9e3dd; border-radius:8px;
+  background:#fff; color:#5d6d69; cursor:pointer;
+  /* 清掉全局 .scan-remove 的 grid-area:del，避免被挤到下一行 */
+  grid-area:auto;
+}
+.scan-section-iconbtn:hover,
+.scan-section-iconbtn:focus-visible {
+  border-color:#146b60; color:#146b60; background:#f2f7f4;
+}
+.scan-section-iconbtn.is-on {
   background:#146b60; border-color:#146b60; color:#fff;
 }
-.scan-section-card .scan-remove {
-  min-height:30px; width:30px; padding:0;
-  display:inline-grid; place-items:center;
+.scan-section-iconbtn.is-danger:hover,
+.scan-section-iconbtn.is-danger:focus-visible,
+.scan-section-iconbtn.is-danger[aria-expanded="true"] {
+  border-color:#d94a56; color:#b42332; background:#fff0f1;
 }
+.scan-section-del-wrap { position:relative; flex:0 0 auto; }
+.scan-section-del-pop {
+  position:absolute; right:0; top:calc(100% + 6px); z-index:5;
+  width:min(220px, 70vw); padding:10px 12px;
+  border:1px solid #e8b7bc; border-radius:12px;
+  background:#fff; box-shadow:0 8px 24px rgba(23,40,34,.12);
+}
+.scan-section-del-pop p {
+  margin:0 0 10px; font-size:13px; font-weight:600; color:#314c42;
+}
+.scan-section-del-pop-actions {
+  display:flex; justify-content:space-between; align-items:center; gap:8px;
+}
+.scan-section-del-pop-actions .ghost {
+  min-height:32px; padding:4px 12px;
+  border:1px solid #d9e3dd; border-radius:8px;
+  background:#fff; color:#5d6d69; font-size:12px; cursor:pointer;
+}
+.scan-section-del-confirm {
+  min-height:32px; padding:4px 12px;
+  border:1px solid #d94a56; border-radius:8px;
+  background:#b42332; color:#fff; font-size:12px; font-weight:600; cursor:pointer;
+}
+.scan-section-del-confirm:hover,
+.scan-section-del-confirm:focus-visible { background:#9a1d2a; }
 /* 折起：一行胶囊，标题 + 正文摘要 */
 .scan-section-capsule {
-  display:grid;
-  grid-template-columns:minmax(0,1fr) auto;
-  gap:6px; align-items:center;
-  padding:4px 4px 4px 6px;
+  display:flex; flex-wrap:nowrap; gap:4px; align-items:center;
+  min-width:0; padding:3px 4px 3px 6px;
   border:1px solid #c5d8ce; border-radius:999px;
   background:linear-gradient(180deg, #eef6f1 0%, #e7f0ea 100%);
 }
 .scan-section-capsule-main {
-  display:grid;
+  flex:1 1 auto; display:grid;
   grid-template-columns:auto auto minmax(0,1fr);
-  gap:8px; align-items:center;
-  min-width:0; min-height:34px; padding:4px 8px;
+  gap:6px; align-items:center;
+  min-width:0; min-height:30px; padding:2px 6px;
   border:0; border-radius:999px; background:transparent;
   text-align:left; cursor:pointer; color:#174e3b;
 }

@@ -681,11 +681,9 @@ export function ScanDialog({
                 onToggleBig={() => setBigPhoto((b) => !b)}
               />
             )}
-          </div>
-          <div className="scan-side">
             <ScanNavSteps
               current={0}
-              enterTitle="录入"
+              typeLabel={docTypeLabel(session.docType || "lab_table")}
               onSelect={(i) => {
                 if (i === 1) {
                   if (!session.docType)
@@ -694,6 +692,8 @@ export function ScanDialog({
                 }
               }}
             />
+          </div>
+          <div className="scan-side">
             <div className="scan-meta">
               <span className="scan-engine">{ENGINE_LABEL[engine]}</span>
               {note && <small role="status">{note}</small>}
@@ -753,17 +753,17 @@ export function ScanDialog({
                 ? "拖动原件平移 · 滚轮缩放 · 右侧表格可直接编辑"
                 : "点击放大原件（放大后可拖动，右侧仍可编辑）"}
             </small>
-          </div>
-          <div className="scan-side">
             {!editing && (
               <ScanNavSteps
                 current={1}
-                enterTitle={`录入 · ${docTypeLabel(session.docType)}`}
+                typeLabel={docTypeLabel(session.docType)}
                 onSelect={(i) => {
                   if (i === 0) setStage("classify");
                 }}
               />
             )}
+          </div>
+          <div className="scan-side">
             <div className="scan-meta">
               <span className="scan-engine">{ENGINE_LABEL[engine]}</span>
               <span className="scan-source-tag">{scanObservationSource(session.docType)}</span>
@@ -1258,19 +1258,19 @@ export function ScanDialog({
   );
 }
 
-/** AntD 式分步导航：圆标 + 连接线 + 可点已完成步 */
+/** 左栏竖排分步：圆标 + 竖连接线 + 可点已完成步；类型挂在「确认类型」旁 */
 function ScanNavSteps({
   current,
-  enterTitle,
+  typeLabel,
   onSelect,
 }: {
   current: 0 | 1;
-  enterTitle: string;
+  typeLabel: string;
   onSelect: (index: 0 | 1) => void;
 }) {
   const steps = [
-    { title: "确认类型", desc: "识别结果，可改选" },
-    { title: enterTitle, desc: "对照原件填写" },
+    { title: `确认类型 · ${typeLabel}`, desc: "识别结果，可改选" },
+    { title: "录入", desc: "对照原件填写" },
   ] as const;
   return (
     <nav className="scan-nav-steps" aria-label="录入步骤">
@@ -1279,7 +1279,7 @@ function ScanNavSteps({
           i < current ? "finish" : i === current ? "process" : "wait";
         const clickable = status === "finish" || (status === "wait" && current === 0 && i === 1);
         return (
-          <Fragment key={step.title}>
+          <Fragment key={i}>
             {i > 0 && (
               <div
                 className={
@@ -1325,10 +1325,12 @@ function SectionFields({
   const rows = sections.length ? sections : [blankRef.current];
   /** 点过 OK 的节折成 capsule；再点 OK 展开 */
   const [okIds, setOkIds] = useState<Set<string>>(() => new Set());
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const setAt = (id: string, patch: Partial<ScanSection>) => {
     onChange(rows.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   };
   const toggleOk = (id: string) => {
+    setConfirmId(null);
     setOkIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -1336,17 +1338,80 @@ function SectionFields({
       return next;
     });
   };
+  const removeSection = (id: string) => {
+    setConfirmId(null);
+    setOkIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    onChange(rows.filter((s) => s.id !== id));
+  };
   return (
     <div className="scan-narrative" role="group" aria-label="文书分节">
       <header className="scan-narrative-head">
         <strong>对照原件核对栏目</strong>
-        <small>标题 + 正文一对；点 OK 折成胶囊，再点打开</small>
+        <small>标题紧贴正文；OK 折成胶囊，删除需确认</small>
       </header>
       <ul className="scan-section-list">
         {rows.map((sec) => {
           const ok = okIds.has(sec.id);
+          const confirming = confirmId === sec.id;
           const preview =
             (sec.body || "").replace(/\s+/g, " ").trim() || "（正文空）";
+          const actions = (
+            <div className="scan-section-actions">
+              <button
+                type="button"
+                className={"scan-section-iconbtn" + (ok ? " is-on" : "")}
+                aria-pressed={ok}
+                aria-label={ok ? "撤回 OK，展开编辑" : "确认本节"}
+                title="OK"
+                onClick={() => toggleOk(sec.id)}
+              >
+                <Check size={15} strokeWidth={2.5} />
+              </button>
+              <div className="scan-section-del-wrap">
+                <button
+                  type="button"
+                  className="scan-section-iconbtn is-danger"
+                  aria-label="删除本节"
+                  aria-expanded={confirming}
+                  aria-haspopup="dialog"
+                  onClick={() =>
+                    setConfirmId(confirming ? null : sec.id)
+                  }
+                >
+                  <Trash2 size={15} />
+                </button>
+                {confirming && (
+                  <div
+                    className="scan-section-del-pop"
+                    role="dialog"
+                    aria-label="是否删除"
+                  >
+                    <p>是否删除？</p>
+                    <div className="scan-section-del-pop-actions">
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => setConfirmId(null)}
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        className="scan-section-del-confirm"
+                        onClick={() => removeSection(sec.id)}
+                      >
+                        确认删除
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
           if (ok) {
             return (
               <li key={sec.id} className="scan-section-capsule">
@@ -1363,14 +1428,7 @@ function SectionFields({
                   </span>
                   <span className="scan-section-capsule-body">{preview}</span>
                 </button>
-                <button
-                  type="button"
-                  className="scan-section-ok is-on"
-                  aria-pressed={true}
-                  onClick={() => toggleOk(sec.id)}
-                >
-                  OK
-                </button>
+                {actions}
               </li>
             );
           }
@@ -1384,29 +1442,7 @@ function SectionFields({
                   aria-label="栏目名"
                   onChange={(e) => setAt(sec.id, { title: e.target.value })}
                 />
-                <button
-                  type="button"
-                  className="scan-section-ok"
-                  aria-pressed={false}
-                  onClick={() => toggleOk(sec.id)}
-                >
-                  OK
-                </button>
-                <button
-                  type="button"
-                  className="scan-remove"
-                  aria-label="删除本节"
-                  onClick={() => {
-                    setOkIds((prev) => {
-                      const next = new Set(prev);
-                      next.delete(sec.id);
-                      return next;
-                    });
-                    onChange(rows.filter((s) => s.id !== sec.id));
-                  }}
-                >
-                  <Trash2 size={15} />
-                </button>
+                {actions}
               </div>
               <textarea
                 className="scan-section-body"
