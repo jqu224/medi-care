@@ -38,9 +38,9 @@ A mobile-first web app for recording symptoms, temperature, and medication, then
 
 **Tips for getting started**
 
-1. Read [PRODUCT.md](PRODUCT.md) for who uses the app, then run it from `app/`.
+1. Read this page for who uses the app.
 2. From `app/`, install dependencies and start the Vite dev server on port `7100`.
-3. `npm test` runs 14 model checks. The running app keeps demo records in this browser's `localStorage`.
+3. `npm test` runs the model checks. The running app keeps demo records in this browser's `localStorage`.
 
 ---
 
@@ -73,10 +73,7 @@ patient / family write          clinician reads
 | `app/` | React 19 + TypeScript + Vite workspace |
 | `app/tests/model.test.ts` | 14 model tests |
 | `mvp/` | Earlier static mock |
-| `PRODUCT.md` | Product scope |
-| `DESIGN.md` | Visual decisions |
 | `docs/assets/hero.svg` | README banner |
-| `docs/hackathon-brief.zh-CN.md` | Chinese hackathon brief |
 
 ## Contract
 

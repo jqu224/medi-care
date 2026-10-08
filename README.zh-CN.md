@@ -38,9 +38,9 @@
 
 **开始之前**
 
-1. 先读 [PRODUCT.md](PRODUCT.md) 看使用者是谁，再从 `app/` 跑起来。
+1. 读这一页，看这个应用给谁用。
 2. 进入 `app/`，安装依赖，在端口 `7100` 启动 Vite。
-3. `npm test` 跑 14 条模型检查。运行中的应用把演示记录留在当前浏览器的 `localStorage`。
+3. `npm test` 跑模型检查。运行中的应用把演示记录留在当前浏览器的 `localStorage`。
 
 ---
 
@@ -73,10 +73,7 @@ patient / family write          clinician reads
 | `app/` | React 19 + TypeScript + Vite 工作区 |
 | `app/tests/model.test.ts` | 14 条模型测试 |
 | `mvp/` | 更早的静态稿 |
-| `PRODUCT.md` | 产品范围 |
-| `DESIGN.md` | 视觉决定 |
 | `docs/assets/hero.svg` | README 头图 |
-| `docs/hackathon-brief.zh-CN.md` | 中文黑客松简报 |
 
 ## 契约
 

@@ -15,6 +15,8 @@ coverage/
 .zion-mcp/
 .zcode/
 
-# Private notes. Never publish.
-AGENTS.md
+# Private writing. Publish READMEs only.
+*.md
+!README.md
+!README.zh-CN.md
 reference/
