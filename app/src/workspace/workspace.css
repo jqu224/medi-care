@@ -2660,19 +2660,88 @@ button:disabled {
 .scan-nav-tail.is-done { background:#146b60; }
 .scan-classify-hint { margin:0; padding:10px 12px; border-radius:10px; background:#eef6f1; color:#314c42; font-size:14px; }
 .scan-source-tag { display:inline-block; padding:2px 8px; border-radius:999px; background:#e8f0eb; color:#314c42; font-size:12px; }
-.scan-narrative { display:grid; gap:10px; border:1px solid #e5e7de; border-radius:12px; padding:10px 12px; background:#fff; }
-.scan-section-block { display:grid; gap:6px; padding-bottom:10px; border-bottom:1px dashed #eef0ea; }
-.scan-section-block:last-of-type { border-bottom:0; padding-bottom:0; }
-.scan-section-head { display:grid; grid-template-columns:minmax(0,1fr) 34px; gap:8px; align-items:center; }
-.scan-section-title {
-  width:100%; min-height:40px; padding:8px 10px;
-  border:1px solid #d9e3dd; border-radius:8px; background:#f7faf8;
-  font:inherit; font-size:14px; font-weight:600; color:#174e3b;
+.scan-narrative {
+  display:grid; gap:10px;
+  border:1px solid #e5e7de; border-radius:14px; padding:12px;
+  background:#fff;
 }
-.scan-section-title:focus { outline:2px solid #146b60; outline-offset:1px; background:#fff; }
-.scan-section-block textarea {
-  width:100%; min-height:64px; padding:8px 10px;
-  border:1px solid #d9e3dd; border-radius:8px; font:inherit; resize:vertical;
+.scan-narrative-head { display:grid; gap:2px; }
+.scan-narrative-head strong {
+  font-size:13px; font-weight:700; color:#174e3b; text-wrap:balance;
+}
+.scan-narrative-head small { font-size:11px; color:#5a6b63; line-height:1.35; text-wrap:pretty; }
+.scan-section-list {
+  list-style:none; margin:0; padding:0;
+  display:grid; gap:8px;
+}
+/* 展开：标题紧贴正文，像 title + subtitle，不要大段空白 */
+.scan-section-card {
+  display:grid; gap:4px;
+  padding:8px 10px;
+  border:1px solid #e5e7de; border-radius:12px;
+  background:#fbfcf9;
+}
+.scan-section-card-top {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  gap:6px; align-items:center;
+}
+.scan-section-title {
+  width:100%; min-height:32px; padding:4px 8px;
+  border:0; border-radius:6px; background:transparent;
+  font:inherit; font-size:13px; font-weight:700; color:#174e3b;
+}
+.scan-section-title:focus {
+  outline:2px solid #146b60; outline-offset:0; background:#fff;
+}
+.scan-section-title::placeholder { color:#8a9a92; font-weight:500; }
+.scan-section-body {
+  width:100%; min-height:44px; margin:0; padding:6px 8px;
+  border:1px solid #e5e7de; border-radius:8px;
+  background:#fff; font:inherit; font-size:13px; line-height:1.45;
+  color:#243d35; resize:vertical;
+}
+.scan-section-body:focus { outline:2px solid #146b60; outline-offset:0; border-color:#146b60; }
+.scan-section-ok {
+  flex:0 0 auto; min-height:30px; padding:4px 10px;
+  border:1px solid #b9cdc3; border-radius:999px;
+  background:#fff; color:#314c42; font-size:11px; font-weight:700;
+  letter-spacing:.02em; cursor:pointer;
+}
+.scan-section-ok:hover, .scan-section-ok:focus-visible { border-color:#146b60; color:#146b60; }
+.scan-section-ok.is-on {
+  background:#146b60; border-color:#146b60; color:#fff;
+}
+.scan-section-card .scan-remove {
+  min-height:30px; width:30px; padding:0;
+  display:inline-grid; place-items:center;
+}
+/* 折起：一行胶囊，标题 + 正文摘要 */
+.scan-section-capsule {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:6px; align-items:center;
+  padding:4px 4px 4px 6px;
+  border:1px solid #c5d8ce; border-radius:999px;
+  background:linear-gradient(180deg, #eef6f1 0%, #e7f0ea 100%);
+}
+.scan-section-capsule-main {
+  display:grid;
+  grid-template-columns:auto auto minmax(0,1fr);
+  gap:8px; align-items:center;
+  min-width:0; min-height:34px; padding:4px 8px;
+  border:0; border-radius:999px; background:transparent;
+  text-align:left; cursor:pointer; color:#174e3b;
+}
+.scan-section-capsule-main:hover,
+.scan-section-capsule-main:focus-visible { background:rgba(255,255,255,.55); }
+.scan-section-capsule-main svg { flex:0 0 auto; color:#146b60; }
+.scan-section-capsule-title {
+  font-size:12px; font-weight:700; white-space:nowrap;
+}
+.scan-section-capsule-body {
+  min-width:0; font-size:12px; color:#5a6b63;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 .scan-labs-switch {
   display:flex; align-items:center; justify-content:space-between; gap:16px;

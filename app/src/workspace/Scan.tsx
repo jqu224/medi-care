@@ -1323,42 +1323,103 @@ function SectionFields({
   const blankRef = useRef<ScanSection | null>(null);
   if (!blankRef.current) blankRef.current = newSection("", "");
   const rows = sections.length ? sections : [blankRef.current];
+  /** 点过 OK 的节折成 capsule；再点 OK 展开 */
+  const [okIds, setOkIds] = useState<Set<string>>(() => new Set());
   const setAt = (id: string, patch: Partial<ScanSection>) => {
     onChange(rows.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   };
+  const toggleOk = (id: string) => {
+    setOkIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   return (
     <div className="scan-narrative" role="group" aria-label="文书分节">
-      <p className="scan-attached-labs-note">
-        栏目名照抄原件（各家病历标题不同）；正文对照左侧填写或粘贴
-      </p>
-      {rows.map((sec) => (
-        <div key={sec.id} className="scan-section-block">
-          <div className="scan-section-head">
-            <input
-              className="scan-section-title"
-              value={sec.title}
-              placeholder="栏目名（如主诉、入院情况…）"
-              aria-label="栏目名"
-              onChange={(e) => setAt(sec.id, { title: e.target.value })}
-            />
-            <button
-              type="button"
-              className="scan-remove"
-              aria-label="删除本节"
-              onClick={() => onChange(rows.filter((s) => s.id !== sec.id))}
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
-          <textarea
-            rows={sec.body.length > 120 ? 6 : 3}
-            value={sec.body}
-            placeholder="本节正文（识别为空时在此补填）"
-            aria-label={(sec.title || "本节") + "正文"}
-            onChange={(e) => setAt(sec.id, { body: e.target.value })}
-          />
-        </div>
-      ))}
+      <header className="scan-narrative-head">
+        <strong>对照原件核对栏目</strong>
+        <small>标题 + 正文一对；点 OK 折成胶囊，再点打开</small>
+      </header>
+      <ul className="scan-section-list">
+        {rows.map((sec) => {
+          const ok = okIds.has(sec.id);
+          const preview =
+            (sec.body || "").replace(/\s+/g, " ").trim() || "（正文空）";
+          if (ok) {
+            return (
+              <li key={sec.id} className="scan-section-capsule">
+                <button
+                  type="button"
+                  className="scan-section-capsule-main"
+                  onClick={() => toggleOk(sec.id)}
+                  aria-expanded={false}
+                  title="再点 OK 打开编辑"
+                >
+                  <Check size={14} strokeWidth={2.5} aria-hidden />
+                  <span className="scan-section-capsule-title">
+                    {sec.title.trim() || "未命名栏目"}
+                  </span>
+                  <span className="scan-section-capsule-body">{preview}</span>
+                </button>
+                <button
+                  type="button"
+                  className="scan-section-ok is-on"
+                  aria-pressed={true}
+                  onClick={() => toggleOk(sec.id)}
+                >
+                  OK
+                </button>
+              </li>
+            );
+          }
+          return (
+            <li key={sec.id} className="scan-section-card">
+              <div className="scan-section-card-top">
+                <input
+                  className="scan-section-title"
+                  value={sec.title}
+                  placeholder="栏目名"
+                  aria-label="栏目名"
+                  onChange={(e) => setAt(sec.id, { title: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className="scan-section-ok"
+                  aria-pressed={false}
+                  onClick={() => toggleOk(sec.id)}
+                >
+                  OK
+                </button>
+                <button
+                  type="button"
+                  className="scan-remove"
+                  aria-label="删除本节"
+                  onClick={() => {
+                    setOkIds((prev) => {
+                      const next = new Set(prev);
+                      next.delete(sec.id);
+                      return next;
+                    });
+                    onChange(rows.filter((s) => s.id !== sec.id));
+                  }}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+              <textarea
+                className="scan-section-body"
+                rows={Math.min(8, Math.max(2, Math.ceil(sec.body.length / 36)))}
+                value={sec.body}
+                placeholder="本节正文（对照左侧补全续行）"
+                aria-label={(sec.title || "本节") + "正文"}
+                onChange={(e) => setAt(sec.id, { body: e.target.value })}
+              />
+            </li>
+          );
+        })}
+      </ul>
       <button
         type="button"
         className="scan-add"
