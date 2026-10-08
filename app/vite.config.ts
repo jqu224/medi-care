@@ -17,6 +17,9 @@ export default defineConfig({
   },
   server: {
     port: 7100,
+    fs: {
+      allow: [path.resolve(__dirname, ".."), path.resolve(__dirname, "../reference/case-ref")],
+    },
   },
   resolve: {
     alias: {

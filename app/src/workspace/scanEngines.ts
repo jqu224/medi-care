@@ -1,7 +1,9 @@
 // 扫描解析引擎链：AI 视觉（OpenAI 兼容多模态）→ 本地 PP-OCR → 手动
 // 网络与识别器都可通过参数注入，便于测试全 mock
 import {
+  emptySession,
   extractJson,
+  healNarrativeSections,
   normalizeSession,
   sessionFromLines,
   type OcrLine,
@@ -48,9 +50,20 @@ export function visionConfigFromEnv(
   return { baseUrl, apiKey, model };
 }
 
-export const PARSE_PROMPT = `你是医疗报告录入助手，分析用户上传的患者报告照片（化验单、病历、体温单等）。先做版面分析：判断报告日期在顶部还是底部、数据表格区域在哪、有哪几列（常见列：序号/中文名称/结果/单位/参考范围/英文缩写，双栏报告会并排两套列），再逐行提取。只提取照片里真实可见的信息，看不清或不确定的绝对不要猜；页码、签名、采样/报告时间不要当作检验项目。返回严格的 JSON，不要输出 JSON 以外的任何文字。格式：
-{"analysis":"一两句话说明这是什么材料、哪家医院、什么日期、表格结构","questions":[{"text":"仅在确有歧义时提问，最多 3 个","options":["选项一","选项二"],"kind":"date 或 choice"}],"reportDate":"YYYY-MM-DD，无法确认则空串","hospital":"医院名或空串","items":[{"seq":"行序号，只看照片上真实印出的（如 14，常与英文缩写连排成 14HCT）；没印就空串，不要自己编号","rawName":"中文名称原文","engName":"英文缩写列原文，没有则空串","value":"纯数字字符串","unit":"单位","refRange":"参考区间","abnormal":"high 或 low 或空串"}]}
-照片不是检验或病历类材料时 items 返回空数组，并在 analysis 里说明看到了什么。value 只保留数字本身，不带箭头和单位。`;
+export const PARSE_PROMPT = `你是医疗材料录入助手。先判断照片类型 docType，再按类型提取。只提取真实可见的信息，看不清不要猜。返回严格 JSON，不要 JSON 以外的文字。
+
+docType 只能是其一：lab_table（印刷化验单）| medical_record（门诊病历）| referral（转诊单：情况说明+指标+初步印象+转科，无终诊）| prescription（处方单）| handwritten_temp（手写体温记录单）| clinical_photo（皮疹等临床表现照片）| medication_log（服药打卡/药盒）| other。
+
+通用字段：
+{"docType":"…","analysis":"一两句：材料类型、医院、日期、结构","questions":[{"text":"仅歧义时提问，最多3个","options":["选项一","选项二"],"kind":"date 或 choice"}],"reportDate":"YYYY-MM-DD 或空串","hospital":"医院名或空串","items":[],"temps":[],"sections":[]}
+
+lab_table：填 items。items 元素：{"seq":"印刷行号或空","rawName":"中文名","engName":"英文缩写或空","value":"纯数字","unit":"单位","refRange":"报告上的参考区间原文，能见必填","abnormal":"high|low|空"}。双栏化验先左列再右列。value 不带箭头和单位。MPV/PDW 等派生项也要整行提取。sections 必须 []。
+
+medical_record / referral：必须填 sections，禁止返回空数组 []。逐段抄写纸面可见栏目，每项 {"title":"原件栏目名原文","body":"该栏完整正文"}。title 照抄纸面（主诉/入院情况/辅助检查/初步诊断/转往…均可，不要套固定模板）；body 尽量抄全可见文字，只有完全看不清才用空串。叙事不要拆成 items；文内检验另填 items。
+
+handwritten_temp：items 与 sections 必须 []；填 temps，每个时点一行：{"date":"YYYY-MM-DD，只有带圈日号则空并把年月放进 questions","time":"HH:MM","celsius":"纯数字体温","note":"用药备注或空"}。
+
+prescription / clinical_photo / medication_log / other：items、temps、sections 都 []，在 analysis 说明看见了什么。`;
 
 export type FollowUp = { assistantJson: string; userAnswer: string };
 
@@ -103,7 +116,10 @@ export async function visionParse(opts: {
   const text = choices?.[0]?.message?.content;
   if (typeof text !== "string" || !text.trim()) throw Error("解析服务没有返回内容");
   const raw = text;
-  return { session: normalizeSession(extractJson(text)), raw };
+  return {
+    session: healNarrativeSections(normalizeSession(extractJson(text)), raw),
+    raw,
+  };
 }
 
 /* Zion 行为流模式：智谱 key 存在 Zion 项目环境变量里，前端只带 flow ID，
@@ -168,7 +184,10 @@ export async function zionParse(opts: {
       : typeof (out as { content?: unknown }).content === "string"
         ? (out as { content: string }).content
         : JSON.stringify(out);
-  return { session: normalizeSession(extractJson(text)), raw: text };
+  return {
+    session: healNarrativeSections(normalizeSession(extractJson(text)), text),
+    raw: text,
+  };
 }
 
 /** 统一 AI 入口：Zion 行为流优先，其次直连多模态接口；都未配置返回 null */
@@ -286,7 +305,13 @@ export async function runScanChain(opts: {
   } catch (e) {
     notes.push(`AI 识别未成功（${brief(e)}），已切换本地识别`);
   }
-  if (ai) return { engine: "vision", session: ai.session, note: "", raw: ai.raw };
+  if (ai)
+    return {
+      engine: "vision",
+      session: healNarrativeSections(ai.session, ai.raw),
+      note: "",
+      raw: ai.raw,
+    };
   if (!notes.length) notes.push("未配置 AI 解析服务，本次使用本地识别");
   try {
     const recognize = opts.recognizer ?? ppocrRecognizer;
@@ -297,14 +322,9 @@ export async function runScanChain(opts: {
   }
   return {
     engine: "manual",
-    session: {
-      analysis:
-        "两次识别都没有成功，照片保留在左侧，请对照原件手动填写，也可以稍后重试",
-      questions: [],
-      reportDate: "",
-      hospital: "",
-      items: [],
-    },
+    session: emptySession(
+      "两次识别都没有成功，照片保留在左侧，请对照原件手动填写，也可以稍后重试",
+    ),
     note: notes.join("；"),
   };
 }
