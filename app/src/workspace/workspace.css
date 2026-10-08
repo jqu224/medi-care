@@ -1947,6 +1947,33 @@ button:disabled {
     min-height: 44px;
     padding: 6px 4px;
   }
+  /* 选中态：固定比例蜡笔手绘圈（不随按钮框拉伸成方），色同 teal */
+  .mobile-nav button.active:not(.plus-button) {
+    position: relative;
+    color: #146b60;
+    font-weight: 650;
+    background: transparent;
+  }
+  .mobile-nav button.active:not(.plus-button):focus-visible {
+    outline: none;
+  }
+  .mobile-nav button.active:not(.plus-button)::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 48%;
+    width: 46px;
+    height: 50px;
+    transform: translate(-50%, -50%) rotate(-2deg);
+    z-index: 0;
+    pointer-events: none;
+    background: center / contain no-repeat
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none'%3E%3Cellipse cx='32' cy='32' rx='23' ry='24' fill='%23146b60' opacity='.08'/%3E%3Cpath d='M18 28c-1-9 8-18 20-18 13 0 22 8 22 19 0 12-9 21-22 21-11 0-20-7-21-17' stroke='%23146b60' stroke-width='2.8' stroke-linecap='round' opacity='.5'/%3E%3Cpath d='M20 36c2 9 11 16 21 15 12-1 20-10 19-21-1-10-9-17-20-17-9 0-17 5-19 13' stroke='%23146b60' stroke-width='2.2' stroke-linecap='round' opacity='.62'/%3E%3Cpath d='M22 24c4-6 12-9 20-8 9 1 15 8 15 16' stroke='%23146b60' stroke-width='1.7' stroke-linecap='round' opacity='.38'/%3E%3C/svg%3E");
+  }
+  .mobile-nav button.active:not(.plus-button) > * {
+    position: relative;
+    z-index: 1;
+  }
   .mobile-nav button.plus-button {
     min-width: 44px;
     width: 44px;
@@ -3319,12 +3346,7 @@ button:disabled {
   box-shadow: none;
 }
 
-/* 移动端底栏：问助手页与侧栏同一逻辑——问助手实色、加号浅色；圆角与侧栏对齐 14px */
-.mobile-nav.is-assistant-tab .assistant-nav-entry.active {
-  background: #146b60;
-  color: #fff;
-  border-radius: 14px;
-}
+/* 移动端底栏：问助手页时加号改浅色（选中态蜡笔圈见上方 mobile-nav.active） */
 .mobile-nav.is-assistant-tab .plus-button {
   background: #e0ece7;
   color: #146b60;
