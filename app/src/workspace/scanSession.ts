@@ -692,8 +692,8 @@ export function sessionFromLines(lines: OcrLine[]): ScanSession {
   const dateText = [...above, ...outside].map((l) => l.text).join("\n");
   const session = emptySession(
     items.length
-      ? `表格解析：${items.length} 行检验项目${groups.length > 1 ? "（左右两组列并排，已按左列→右列顺序排好）" : ""}，${matched} 项匹配指标目录，${auto} 项将新建自定义指标；页眉页脚（日期/页码/签名）已排除。`
-      : "表格里没有读到可录入的检验数值，请对照原件手动填写。",
+      ? `表格解析：${items.length} 行检验项目${groups.length > 1 ? "（左右两组列并排，已按左列→右列顺序排好）" : ""}，${matched} 项匹配指标目录，${auto} 项将新建自定义指标；页眉页脚（日期/页码/签名）已排除`
+      : "表格里没有读到可录入的检验数值，请对照原件手动填写",
   );
   session.reportDate =
     extractReportDate(dateText) || extractReportDate(lines.map((l) => l.text).join("\n"));
@@ -792,8 +792,8 @@ export function sessionFromOcr(text: string): ScanSession {
   );
   const session = emptySession(
     rows.length
-      ? `本地识别到 ${rows.length} 行数据：${matched.length} 项匹配指标目录，${auto.length} 项将新建自定义指标；不需要的行可改为不录入。`
-      : "本地识别没有读到有效的检验数值，请对照原件手动填写。",
+      ? `本地识别到 ${rows.length} 行数据：${matched.length} 项匹配指标目录，${auto.length} 项将新建自定义指标；不需要的行可改为不录入`
+      : "本地识别没有读到有效的检验数值，请对照原件手动填写",
   );
   session.reportDate = extractReportDate(text);
   session.items = rows.map((r) => ({

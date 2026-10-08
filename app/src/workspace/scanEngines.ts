@@ -299,7 +299,7 @@ export async function runScanChain(opts: {
     engine: "manual",
     session: {
       analysis:
-        "两次识别都没有成功。照片保留在左侧，请对照原件手动填写，也可以稍后重试。",
+        "两次识别都没有成功，照片保留在左侧，请对照原件手动填写，也可以稍后重试",
       questions: [],
       reportDate: "",
       hospital: "",

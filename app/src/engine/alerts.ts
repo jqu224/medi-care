@@ -9,6 +9,7 @@ import {
   SYMPTOMS,
   effDays,
   effThreshold,
+  tierFactor,
   type AlertSettings,
   type MetricKey,
 } from './config'
@@ -33,6 +34,27 @@ export interface Alert {
   evidence: Evidence
   metricKeys: MetricKey[]
   weight: number
+  /**
+   * 该去哪一级医疗资源。复刻需求方小 Q 的真实动作：
+   * 「遇到三系降低、铁蛋白急剧升高、肝肾功能出问题……建议一次性到大医院去看，
+   *   后期病情恶化，你没有办法转院，地方医疗水平不够」。
+   *
+   * 只说医疗资源类型，不列医院名、不做排名——数据无法验证，且有合规风险。
+   */
+  referral?: { level: ReferralLevel; resource: string }
+}
+
+export type ReferralLevel = 'routine' | 'soon' | 'urgent'
+
+export const REFERRAL_RESOURCE: Record<ReferralLevel, string> = {
+  urgent: '需要具备儿童风湿免疫专科和重症监护能力的医疗机构',
+  soon: '具备儿童风湿免疫专科的医疗机构',
+  routine: '维持原随访医院，随访时带上记录',
+}
+
+function referralFor(level: AlertLevel): { level: ReferralLevel; resource: string } {
+  const r: ReferralLevel = level === 'red' ? 'urgent' : level === 'yellow' ? 'soon' : 'routine'
+  return { level: r, resource: REFERRAL_RESOURCE[r] }
 }
 
 export interface EngineInput {
@@ -77,7 +99,7 @@ function round1(n: number): number {
 
 export function runEngine(input: EngineInput): Alert[] {
   const { data, settings } = input
-  const s = settings.sensitivity
+  const s = tierFactor(settings.tier)
   const alerts: Alert[] = []
   const { days: feverDays, lastMax } = feverStreak(data.logs)
 
@@ -304,7 +326,11 @@ export function runEngine(input: EngineInput): Alert[] {
     if (!allCore && a.level === 'yellow') return { ...a, level: 'watch' as AlertLevel }
     return a
   })
-  return graded.sort((a, b) => levelRank(b.level) - levelRank(a.level) || b.weight - a.weight)
+  /* 转诊建议挂在分级之后：降级成 watch 的警报只建议 routine，
+     否则家属会看到「已降级但仍要求去大医院」这种自相矛盾的说法。 */
+  return graded
+    .map((a) => ({ ...a, referral: referralFor(a.level) }))
+    .sort((a, b) => levelRank(b.level) - levelRank(a.level) || b.weight - a.weight)
 }
 
 function levelRank(l: AlertLevel): number {

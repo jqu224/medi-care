@@ -68,6 +68,7 @@ export function ScanDialog({
   actor,
   update,
   editing,
+  incoming,
   onClose,
   onSaved,
 }: {
@@ -76,6 +77,7 @@ export function ScanDialog({
   actor: Actor;
   update: (fn: (p: Patient) => void, extra?: (d: Database) => void) => void;
   editing?: ScanRecord;
+  incoming?: File;
   onClose: () => void;
   onSaved: (notice: string) => void;
 }) {
@@ -139,7 +141,7 @@ export function ScanDialog({
     if (
       stage !== "pick" &&
       !savedRef.current &&
-      !confirm("有未保存的识别内容。放弃并关闭？")
+      !confirm("有未保存的识别内容，放弃并关闭？")
     )
       return;
     if (newPhotoRef.current && !savedRef.current && photoId)
@@ -165,12 +167,17 @@ export function ScanDialog({
       setDup(hit);
       if (hit?.kind === "exact")
         setError(
-          `这张照片与已有扫描（${hit.scan.session.reportDate || hit.scan.createdAt.slice(0, 10)}）完全相同，已阻止识别。请先在扫描记录中删除那条，或换一张照片。`,
+          `这张照片与已有扫描（${hit.scan.session.reportDate || hit.scan.createdAt.slice(0, 10)}）完全相同，已阻止识别。请先在扫描记录中删除那条，或换一张照片`,
         );
     } catch (e) {
       setError(e instanceof Error ? e.message : "图片读取失败，请换一张重试");
     }
   };
+
+  const incomingRef = useRef(incoming);
+  useEffect(() => {
+    if (incomingRef.current) void pickFile(incomingRef.current);
+  }, []);
 
   const begin = async (manual: boolean) => {
     if (!prepared) return;
@@ -200,7 +207,7 @@ export function ScanDialog({
       setEngine("manual");
       setNote("");
       setSession(
-        emptySession("照片已保存。请对照左侧原件逐项填写，确认后才会生成检测记录。"),
+        emptySession("照片已保存，请对照左侧原件逐项填写，确认后才会生成检测记录"),
       );
       setStage("confirm");
       setBusy("");
@@ -217,8 +224,8 @@ export function ScanDialog({
       setSession(outcome.session);
     } catch {
       setEngine("manual");
-      setNote("识别过程出现异常，请对照原件手动填写。");
-      setSession(emptySession("识别没有完成，请对照原件手动填写。"));
+      setNote("识别过程出现异常，请对照原件手动填写");
+      setSession(emptySession("识别没有完成，请对照原件手动填写"));
     }
     setStage("confirm");
     setBusy("");
@@ -353,11 +360,11 @@ export function ScanDialog({
     }
     if (blocked.length) {
       setError(
-        `以下项目的单位与所选指标不一致，无法换算，已阻止保存：${blocked.join("、")}。请改选「新建自定义指标」或「不录入（仅存档）」。`,
+        `以下项目的单位与所选指标不一致，无法换算，已阻止保存：${blocked.join("、")}，请改选「新建自定义指标」或「不录入（仅存档）」`,
       );
       return;
     }
-    if (!rows.length && !confirm("没有勾选任何录入项。仅保存照片存档，不生成检测记录？"))
+    if (!rows.length && !confirm("没有勾选任何录入项，仅保存照片存档，不生成检测记录？"))
       return;
     const customs: Metric[] = [];
     /* 复用旧自定义指标时若其单位为空，用报告单位回填（单位只是展示口径，不回改历史数值） */
@@ -417,7 +424,7 @@ export function ScanDialog({
       others.some((x) => x.photoHash && x.photoHash === fingerprints.sha)
     ) {
       setError(
-        "这张照片与已有扫描完全相同，已拒绝保存。请先在扫描记录中删除那条，再重新上传。",
+        "这张照片与已有扫描完全相同，已拒绝保存，请先在扫描记录中删除那条，再重新上传",
       );
       return;
     }
@@ -425,7 +432,7 @@ export function ScanDialog({
     if (
       similar &&
       !confirm(
-        `与已有扫描（${similar.session.reportDate} · ${scanSignature(similar.session).length} 项）报告日期相同、条目相近，可能重复录入。仍要保存？\n建议先在扫描记录中删除原件后再上传。`,
+        `与已有扫描（${similar.session.reportDate} · ${scanSignature(similar.session).length} 项）报告日期相同、条目相近，可能重复录入，仍要保存？\n建议先在扫描记录中删除原件后再上传。`,
       )
     )
       return;
@@ -456,7 +463,7 @@ export function ScanDialog({
         },
       );
     } catch {
-      setError("保存失败，请重试。输入已保留。");
+      setError("保存失败，请重试，输入已保留");
       return;
     }
     savedRef.current = true;
@@ -500,24 +507,41 @@ export function ScanDialog({
       {stage === "pick" && (
         <div className="scan-pick">
           <p className="form-help">
-            适合识别：化验单、住院或门诊病历。手写体温单识别率低，建议手动录入体温。
+            适合识别：化验单、住院或门诊病历。手写体温单识别率低，建议手动录入体温
             {aiReady
-              ? " 已配置 AI 解析，识别时照片会发送到所配置的解析服务。"
-              : " 未配置 AI 解析服务，将使用浏览器本地识别，也可直接手动填写。"}
+              ? " 已配置 AI 解析，识别时照片会发送到所配置的解析服务"
+              : " 未配置 AI 解析服务，将使用浏览器本地识别，也可直接手动填写"}
           </p>
-          <label className="scan-file">
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={(e) => pickFile(e.target.files?.[0])}
-            />
-            {previewUrl ? (
+          <div className="scan-sources">
+            <label>
+              照相机
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => {
+                  pickFile(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <label>
+              本地文件夹
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  pickFile(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+          {previewUrl && (
+            <div className="scan-file">
               <img src={previewUrl} alt="待识别的照片预览" />
-            ) : (
-              <span className="scan-file-hint">选择或拍摄一张报告照片</span>
-            )}
-          </label>
+            </div>
+          )}
           {error && (
             <p className="save-error" role="alert">
               {error}
@@ -525,7 +549,7 @@ export function ScanDialog({
           )}
           {dup?.kind === "similar" && !error && (
             <p className="form-help" role="status">
-              这张照片与已有扫描（{dup.scan.session.reportDate || dup.scan.createdAt.slice(0, 10)}）看起来非常相近，可能是同一份报告重拍。建议先在扫描记录中删除原件再上传。
+              这张照片与已有扫描（{dup.scan.session.reportDate || dup.scan.createdAt.slice(0, 10)}）看起来非常相近，可能是同一份报告重拍。建议先在扫描记录中删除原件再上传
             </p>
           )}
           <div className="scan-actions">
@@ -846,7 +870,7 @@ export function ScanDialog({
               </p>
             )}
             <p className="form-help">
-              识别结果只是录入辅助，请以纸质或电子报告原件为准；确认保存后才会生成检测记录，预警规则不变。
+              识别结果只是录入辅助，请以纸质或电子报告原件为准；确认保存后才会生成检测记录，预警规则不变
             </p>
             <button className="primary submit" onClick={save}>
               确认并保存 <ScanText size={18} />
@@ -1247,12 +1271,14 @@ export function ScanRecords({
   patient,
   metrics,
   readonly,
+  onAdd,
   onEdit,
   onRemove,
 }: {
   patient: Patient;
   metrics: Metric[];
   readonly: boolean;
+  onAdd: (file: File) => void;
   onEdit: (scan: ScanRecord) => void;
   onRemove: (scan: ScanRecord) => void;
 }) {
@@ -1262,18 +1288,51 @@ export function ScanRecords({
   const [zoom, setZoom] = useState("");
   return (
     <section className="panel scan-panel" aria-label="扫描记录">
-      <div className="record-heading">
-        <h2>扫描记录</h2>
-        <span>照片仅保存在本机浏览器{readonly ? " · 只读" : ""}</span>
+      <div className="scan-panel-intro">
+        <div className="record-heading">
+          <h2>扫描记录</h2>
+          {!readonly && <span>照片仅保存在本机浏览器</span>}
+        </div>
+        {readonly ? (
+          <p className="scan-readonly" role="status">
+            当前无法上传扫描，因为你是医生模式。
+          </p>
+        ) : (
+          <>
+            <p className="form-help scan-panel-lede">
+              每次拍照识别都保留原件与识别结果，可随时回顾和修改；修改会同步更新对应的检测记录。
+            </p>
+            <div className="scan-sources">
+            <label>
+              照相机
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) onAdd(file);
+                }}
+              />
+            </label>
+            <label>
+              本地文件夹
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) onAdd(file);
+                }}
+              />
+            </label>
+          </div>
+          </>
+        )}
       </div>
-      <p className="form-help">
-        每次拍照识别都保留原件与识别结果，可随时回顾和修改；修改会同步更新对应的检测记录。
-      </p>
-      {!scans.length && (
-        <p className="empty">
-          还没有扫描记录。新增记录里选「添加扫描记录」，拍一张化验单或病历试试。
-        </p>
-      )}
+      {!scans.length && <p className="empty scan-panel-empty">还没有扫描记录。</p>}
       {scans.map((scan) => {
         const rows = patient.observations.filter((o) => o.group === scan.group);
         return (
@@ -1308,10 +1367,10 @@ export function ScanRecords({
                 )}
                 {rows.length > 0 ? (
                   <p className="scan-linked">
-                    已生成 {rows.length} 条检测记录（{scan.session.reportDate}），可在时间线与趋势中查看。
+                    已生成 {rows.length} 条检测记录（{scan.session.reportDate}），可在时间线与趋势中查看
                   </p>
                 ) : (
-                  <p className="scan-linked">仅照片存档，未生成检测记录。</p>
+                  <p className="scan-linked">仅照片存档，未生成检测记录</p>
                 )}
                 {!readonly && (
                   <div className="scan-actions scan-card-actions">

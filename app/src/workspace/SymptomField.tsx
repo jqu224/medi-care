@@ -110,7 +110,7 @@ export default function SymptomField({
           placeholder="例如：今天下楼比昨天容易，但穿衣仍需帮助"
         />
       </label>
-      <small>自我记录分级，用于个人前后比较，不是临床严重程度。</small>
+      <small>自我记录分级，用于个人前后比较，不是临床严重程度</small>
     </fieldset>
   );
 }

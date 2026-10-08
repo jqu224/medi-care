@@ -7,6 +7,7 @@ import {
   type SymptomId,
 } from "../engine/config";
 import { runEngine } from "../engine/alerts";
+import type { Snapshot } from "../engine/staticScoring";
 import type { MedEvent } from "../data/seed";
 import { todayISO, addDaysISO } from "../lib/date";
 import type { ScanRecord } from "./scanSession";
@@ -445,6 +446,117 @@ export function mutatePatient(
 export function commit(storage: Pick<Storage, "setItem">, db: Database) {
   storage.setItem(KEY, JSON.stringify(db));
 }
+/**
+ * 把患者最近的记录组装成静态判分所需的快照。
+ *
+ * 取「每个指标最近一次有效数值」，并单独记录连续高热天数（HLH 需要 >38.5℃ 连续 7 天）。
+ * 脾大、NK 活性、sCD25、噬血现象、细胞减少系���等没有采集通道，保持 undefined，
+ * 由判分模块落成「未采集」——不静默当作未达标。
+ */
+export function snapshotFor(p: Patient): Snapshot {
+  const latestOf = (key: string): number | undefined => {
+    const hit = p.observations
+      .filter((o) => o.metric === key && Number.isFinite(Number(o.value)))
+      .sort((a, b) => b.at.localeCompare(a.at))[0];
+    return hit ? Number(hit.value) : undefined;
+  };
+  const days = [
+    ...new Set(p.observations.map((o) => o.at.slice(0, 10))),
+  ].sort();
+  let feverStreakHigh = 0;
+  for (let i = days.length - 1; i >= 0; i--) {
+    const max = Math.max(
+      0,
+      ...p.observations
+        .filter((o) => o.metric === "temp" && o.at.slice(0, 10) === days[i])
+        .map((o) => Number(o.value)),
+    );
+    if (max >= 38.5) feverStreakHigh++;
+    else break;
+  }
+  const feverToday = latestOf("temp");
+  const has = (key: string) =>
+    p.observations.some(
+      (o) => o.metric === key && (o.value === "是" || (o.symptom?.severity ?? 0) > 0),
+    );
+  /* 血细胞减少「累及外周血两系或三系」（PRD §2.2）。
+     只有拿到该项的实际结果才计数；没有结果就是「未测」，不按 0 计。
+     参考下限取常见成人/儿童下限，用于判断「这系是否偏低」，不是诊断阈值。 */
+  const lowLimit: Record<string, number> = { platelet: 150, 白细胞: 4, 血红蛋白: 120 };
+  let cytopeniaLines = 0;
+  let cytopeniaKnown = false;
+  for (const [name, limit] of Object.entries(lowLimit)) {
+    const v = latestOf(name);
+    if (v === undefined) continue;
+    cytopeniaKnown = true;
+    if (v < limit) cytopeniaLines++;
+  }
+  return {
+    ferritin: latestOf("ferritin"),
+    platelet: latestOf("platelet"),
+    ast: latestOf("ast"),
+    tg: latestOf("tg"),
+    fibrinogen: latestOf("fibrinogen"),
+    ldh: latestOf("ldh"),
+    flags: {
+      feverToday,
+      feverStreakHigh: feverStreakHigh || undefined,
+      cns: has("cns") || undefined,
+      bleeding: has("bleeding") || undefined,
+      arthritis: has("joint") || undefined,
+      cytopeniaLines: cytopeniaKnown ? cytopeniaLines : undefined,
+    },
+  };
+}
+
+const SCORED_METRICS = [
+  "temp",
+  "ferritin",
+  "platelet",
+  "ast",
+  "tg",
+  "fibrinogen",
+  "ldh",
+] as const;
+
+/** 记录时间给人看。没有钟点就明说，不补一个不存在的上传时刻。 */
+function clockLabel(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(iso);
+  if (!m) return iso;
+  const day = `${m[1]}年${Number(m[2])}月${Number(m[3])}日`;
+  return m[4] ? `${day} ${m[4]}:${m[5]}` : `${day}（没有记下几点）`;
+}
+
+/**
+ * 判分卡用的是哪一批数。不是平均值，也不是某一张化验单的整页。
+ * 每个指标各取 `at` 最近的一条；这些条的日期可以不同。
+ */
+export function assessmentBasis(p: Pick<Patient, "observations">): string {
+  const rows = SCORED_METRICS.map((key) =>
+    p.observations
+      .filter((o) => o.metric === key && Number.isFinite(Number(o.value)))
+      .sort(
+        (a, b) => b.at.localeCompare(a.at) || b.created.localeCompare(a.created),
+      )[0],
+  ).filter((o): o is Observation => !!o);
+  if (!rows.length)
+    return "还没有检验或体温。这不是平均值；有记录以后，每个指标各取自己最近的一条。";
+  const ats = [...new Set(rows.map((o) => o.at))].sort();
+  const createds = [...new Set(rows.map((o) => o.created))].sort();
+  const when =
+    ats.length === 1
+      ? `用到的记录时间是 ${clockLabel(ats[0])}`
+      : `用到的记录从 ${clockLabel(ats[0])} 到 ${clockLabel(ats[ats.length - 1])}`;
+  const sameStamp =
+    createds.length === ats.length && createds.every((c, i) => c === ats[i]);
+  const wrote = sameStamp
+    ? ""
+    : createds.length === 1
+      ? `，写入时间是 ${clockLabel(createds[0])}`
+      : `，写入时间从 ${clockLabel(createds[0])} 到 ${clockLabel(createds[createds.length - 1])}`;
+  return `不是平均值。每个指标只取自己最近的一条，不是同一次上传的化验单。${when}${wrote}。`;
+}
+
 export function alertsFor(p: Patient) {
   const active = p.monitors.filter(
     (m) => m.active && ["sjia", "mas"].includes(m.preset),

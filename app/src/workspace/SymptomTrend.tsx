@@ -56,7 +56,7 @@ export default function SymptomTrend({
         </LineChart>
       </ResponsiveContainer>
       {rows.some((o) => o.symptom?.severity === undefined) && (
-        <small>旧记录或未记录程度不绘制分值，不补零，也不跨缺失值连线。</small>
+        <small>旧记录或未记录程度不绘制分值，不补零，也不跨缺失值连线</small>
       )}
     </div>
   );

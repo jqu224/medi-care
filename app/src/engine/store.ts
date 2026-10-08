@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { SEED, type DailyLog, type DataPoint, type SeedData } from '../data/seed'
-import { DEFAULT_SETTINGS, type AlertSettings, type MetricKey } from '../engine/config'
+import { DEFAULT_SETTINGS, normalizeSettings, type AlertSettings, type MetricKey } from '../engine/config'
 import { runEngine, type Alert } from '../engine/alerts'
 
 const K_LOGS = 'sjia:user-logs:v1'
@@ -32,10 +32,34 @@ export interface UserLab {
   point: DataPoint
 }
 
+/**
+ * 从存储里读回预警设置，永远返回当前结构的完整对象。
+ *
+ * 这是档位迁移真正落地的地方：旧版写进去的是连续 `sensitivity`，
+ * 也可能是被截断的残缺对象。runEngine 用 `settings.weights[k] > 0` 判断
+ * 指标是否启用，遇到 undefined 会判 false——等于把这个指标的预警静默关掉，
+ * 家属只会看到「怎么不提醒了」而查不出原因。
+ *
+ * 抽成导出的纯函数，是为了能脱离 React 与 localStorage 单测这条读档路径。
+ */
+export function readPersistedSettings(raw: string | null): AlertSettings {
+  let parsed: unknown = DEFAULT_SETTINGS
+  if (raw) {
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      parsed = DEFAULT_SETTINGS
+    }
+  }
+  return normalizeSettings(parsed)
+}
+
 export function useStore() {
   const [userLogs, setUserLogs] = useState<DailyLog[]>(() => load(K_LOGS, []))
   const [userLabs, setUserLabs] = useState<UserLab[]>(() => load(K_LABS, []))
-  const [settings, setSettingsState] = useState<AlertSettings>(() => load(K_SETTINGS, DEFAULT_SETTINGS))
+  const [settings, setSettingsState] = useState<AlertSettings>(() =>
+    readPersistedSettings(load(K_SETTINGS, null)),
+  )
   const [viewed, setViewed] = useState<string[]>(() => load(K_VIEWED, []))
 
   const data: SeedData = useMemo(() => {

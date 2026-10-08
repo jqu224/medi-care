@@ -8,10 +8,10 @@
 export type ScanGate = { ok: true } | { ok: false; message: string };
 
 export const REPORT_DATE_REQUIRED =
-  "请先确认报告日期，再保存。";
+  "请先确认报告日期，再保存";
 
 export const HOSPITAL_REQUIRED =
-  "请先确认这份报告是哪家医院或机构出具的。这决定了这份数据在就诊、转诊时能不能作为参考。";
+  "请先确认这份报告是哪家医院或机构出具的，这决定了这份数据在就诊、转诊时能不能作为参考";
 
 /**
  * 保存前的硬性校验。日期与医院都是必填——

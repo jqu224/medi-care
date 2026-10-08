@@ -12,6 +12,10 @@ coverage/
 *.local
 .test-output/
 
+# 样式预览产物（scripts/preview-assistant.tsx 生成的临时页面）
+.preview/
+app/preview.html
+
 # Local agent, MCP, and review artifacts
 .impeccable/
 .shots/

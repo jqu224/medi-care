@@ -5,6 +5,9 @@ import {
   scoreMsTable,
   scorePrinto2016,
   scoreStatic,
+  groupCriteriaByState,
+  STANDARD_SHORT_NAMES,
+  scoreStatic,
   type Snapshot,
 } from "../src/engine/staticScoring";
 
@@ -254,4 +257,26 @@ test("printo and hlh keep separate ferritin lines", () => {
   const snap = { ...full, ferritin: 600 };
   assert.equal(scorePrinto2016(snap).criteria[1].state, "not-met");
   assert.equal(scoreHlh2004(snap).criteria.find((c) => c.key === "ferritin")!.state, "met");
+});
+test("groupCriteriaByState flattens all three standards into three buckets", () => {
+  const gs = groupCriteriaByState(scoreStatic(full));
+  /* HLH 8 + PRINTO 6 + MS 7 = 21 总数；MS 只有 not-measured 进来 */
+  const total = gs.met.length + gs.notMet.length + gs.notMeasured.length;
+  assert.ok(total < 21, "MS 系数项要被过滤掉一部分");
+  assert.ok(total >= 8 + 6, "HLH 8 + PRINTO 6 至少要进来");
+  assert.ok(gs.notMeasured.length >= 3, "NK/sCD25/噬血是 not-measured");
+});
+
+test("MS met criteria do not leak into the met bucket", () => {
+  /* 给 MS 全部输入，met 桶里只该有 HLH/PRINTO 的真达标项 */
+  const gs = groupCriteriaByState(scoreStatic(full));
+  for (const { criterion } of gs.met) {
+    assert.ok(!criterion.label.includes("系数"), `MS 系数项 ${criterion.label} 不应在 met 桶`);
+  }
+});
+
+test("every standard has a short Chinese label for the UI", () => {
+  for (const [id, name] of Object.entries(STANDARD_SHORT_NAMES)) {
+    assert.ok(typeof name === "string" && name.length > 0, `${id} 缺中文标签`);
+  }
 });

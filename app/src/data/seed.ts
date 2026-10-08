@@ -50,6 +50,12 @@ export interface SeedData {
   series: Record<MetricKey, DataPoint[]>
   logs: DailyLog[]
   events: MedEvent[]
+  /**
+   * R8 炎症指标时序（CRP / 血沉 / 白细胞等自定义指标）。
+   * 这些指标不在 MAS 主目录内，由工作台按名称匹配后单独传入；
+   * SEED 不预置，需扫描化验单建库后才有数据。
+   */
+  inflammation?: { date: string; value: number; metricName: string }[]
 }
 
 const rnd = mulberry32(20261007)

@@ -70,7 +70,7 @@ export default function AlertTicker({
           aria-expanded={expanded}
           aria-controls={id}
           onClick={() => setExpanded(!expanded)}
-          aria-label={`${alerts.filter((a) => a.level === "red").length} 条重度警报，${alerts.filter((a) => a.level === "yellow").length} 条轻度预警。${expanded ? "收起" : "展开"} ${alerts.length} 条提醒`}
+          aria-label={`${alerts.filter((a) => a.level === "red").length} 条重度警报，${alerts.filter((a) => a.level === "yellow").length} 条轻度预警，${expanded ? "收起" : "展开"} ${alerts.length} 条提醒`}
         >
           <span className="ticker-levels">
             <b className="ticker-red">

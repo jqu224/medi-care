@@ -194,7 +194,7 @@ export function scorePrinto2016(snap: Snapshot): StaticVerdict {
     status,
     headline,
     detail:
-      "这套标准要求：先有发热，铁蛋白超过 684 ng/mL，再有血小板、AST、甘油三酯、纤维蛋白原里的至少两项同时过线。",
+      "这套标准要求：先有发热，铁蛋白超过 684 ng/mL，再有血小板、AST、甘油三酯、纤维蛋白原里的至少两项同时过线",
     criteria: [feverCriterion, ferCriterion, ...pairs],
     metCount,
     assessableCount,
@@ -434,7 +434,7 @@ export function scoreMsTable(snap: Snapshot): StaticVerdict {
       standard: "ms-score",
       status: "insufficient",
       headline: `还缺 ${missing.length} 项数据，暂时算不出这个评分`,
-      detail: `缺的是：${missing.map((m) => m.label.split("（")[0]).join("、")}。补齐后这里会显示一个数值，以及它和 −2.1 这条线的距离。`,
+      detail: `缺的是：${missing.map((m) => m.label.split("（")[0]).join("、")}，补齐后这里会显示一个数值，以及它和 −2.1 这条线的距离。`,
       criteria,
       metCount: 0,
       assessableCount: criteria.length - missing.length,
@@ -470,4 +470,45 @@ export function scoreMsTable(snap: Snapshot): StaticVerdict {
 
 export function scoreStatic(snap: Snapshot): StaticVerdict[] {
   return [scorePrinto2016(snap), scoreHlh2004(snap), scoreMsTable(snap)];
+}
+
+/* ─────────────────── 按状态分组（给 UI 用） ─────────────────── */
+
+export const STANDARD_SHORT_NAMES: Record<StandardId, string> = {
+  "hlh-2004": "HLH-2004",
+  "printo-2016": "PRINTO",
+  "ms-score": "MS 评分",
+};
+
+export type CriterionWithStandard = {
+  criterion: Criterion;
+  standard: StandardId;
+};
+
+export type GroupedCriteria = {
+  met: CriterionWithStandard[];
+  notMet: CriterionWithStandard[];
+  notMeasured: CriterionWithStandard[];
+};
+
+/**
+ * 把三套标准的判分项按状态合在一起。
+ * MS 评分里的「met/not-met」并不是诊断意义上的达标——
+ * 它们只是「这个系数有值、可以代入公式」，放进「已达标」组会误导。
+ * 所以 MS 只把 not-measured 项算进来，剩下的留给它自己的 headline 表达。
+ */
+export function groupCriteriaByState(verdicts: StaticVerdict[]): GroupedCriteria {
+  const met: CriterionWithStandard[] = [];
+  const notMet: CriterionWithStandard[] = [];
+  const notMeasured: CriterionWithStandard[] = [];
+  for (const v of verdicts) {
+    for (const c of v.criteria) {
+      const entry = { criterion: c, standard: v.standard };
+      if (v.standard === "ms-score" && c.state !== "not-measured") continue;
+      if (c.state === "met") met.push(entry);
+      else if (c.state === "not-met") notMet.push(entry);
+      else notMeasured.push(entry);
+    }
+  }
+  return { met, notMet, notMeasured };
 }

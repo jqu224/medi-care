@@ -225,3 +225,53 @@ test("R8 never claims the condition is safe", () => {
   const text = `${r8.title}${r8.summary}${r8.evidence.what}${r8.evidence.line}${r8.evidence.action}`;
   assert.doesNotMatch(text, /安全|已排除|没有风险/);
 });
+/* ---------------------------- 转诊建议 P0-D ---------------------------- */
+
+test("every alert carries a referral that matches its level", () => {
+  const alerts = runEngine({
+    data: dataWith({
+      events: [{ date: "2026-10-02", type: "steroid", label: "减量" }],
+      lastTemp: 40.5,
+    }),
+    settings: DEFAULT_SETTINGS,
+  });
+  assert.ok(alerts.length > 0);
+  for (const a of alerts) {
+    assert.ok(a.referral, `${a.id} 缺少转诊建议`);
+    const expected = a.level === "red" ? "urgent" : a.level === "yellow" ? "soon" : "routine";
+    assert.equal(a.referral!.level, expected, `${a.id} 的 level=${a.level} 应映射到 ${expected}`);
+  }
+});
+
+test("referral names a kind of medical resource, never a hospital", () => {
+  const alerts = runEngine({
+    data: dataWith({ events: [{ date: "2026-10-02", type: "steroid", label: "减量" }], lastTemp: 40.5 }),
+    settings: DEFAULT_SETTINGS,
+  });
+  for (const a of alerts) {
+    const r = a.referral!.resource;
+    assert.ok(r.length > 0);
+    assert.doesNotMatch(r, /医院名|北京|协和|儿童医院|排名|top/i, `出现了具体机构：${r}`);
+    assert.match(r, /医疗机构|医院|随访/, `应落在医疗资源类型：${r}`);
+  }
+});
+
+test("a downgraded alert does not still demand a big hospital", () => {
+  // 非核心指标的黄色提醒会被降级为 watch，转诊建议必须同步降为 routine，
+  // 否则家属会看到「已降级但仍要求去大医院」这种自相矛盾的说法。
+  const settings = { ...DEFAULT_SETTINGS, coreFlags: { ...DEFAULT_SETTINGS.coreFlags, ferritin: false } };
+  const alerts = runEngine({
+    data: {
+      ...dataWith({ lastTemp: 40.5 }),
+      series: {
+        ...dataWith({ lastTemp: 40.5 }).series,
+        ferritin: [{ date: "2026-10-08", value: 800, source: "手录" as const }],
+      },
+    },
+    settings,
+  });
+  const fer = alerts.find((a) => a.id === "ferritin");
+  if (fer && fer.level === "watch") {
+    assert.equal(fer.referral!.level, "routine");
+  }
+});

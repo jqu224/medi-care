@@ -14,6 +14,7 @@ import {
   periodRange,
   seedDatabase,
   seriesFor,
+  assessmentBasis,
   togglePlan,
   trendFull,
   trendRange,
@@ -407,6 +408,40 @@ test("symptom impacts, rash locations and notes survive persistence without rewr
   const restored=loadDatabase(storage);
   assert.deepEqual(restored.patients[0].observations.find(o=>o.id==="graded")!.symptom,{severity:2,impacts:["影响睡眠"],parts:["躯干","上肢"],note:"晚上更明显"});
   assert.deepEqual(restored.patients[0].observations[0],original);
+});
+
+test("assessment uses each metric's latest row, not an average or one upload", () => {
+  const row = (metric: string, value: string, at: string, created = at) => ({
+    id: metric + at,
+    group: "g",
+    metric,
+    value,
+    context: "",
+    at,
+    created,
+    source: "手录",
+    author: "测试",
+  });
+  const split = assessmentBasis({
+    observations: [
+      row("ferritin", "100", "2026-09-01"),
+      row("ferritin", "900", "2026-10-07"),
+      row("temp", "39", "2026-09-28"),
+    ],
+  });
+  assert.match(split, /不是平均值/);
+  assert.match(split, /每个指标只取自己最近的一条/);
+  assert.match(split, /2026年9月28日（没有记下几点）/);
+  assert.match(split, /2026年10月7日（没有记下几点）/);
+  assert.doesNotMatch(split, /9月1日/);
+  const one = assessmentBasis({
+    observations: [
+      row("ferritin", "900", "2026-10-07T15:40", "2026-10-08T09:05"),
+      row("platelet", "170", "2026-10-07T15:40", "2026-10-08T09:05"),
+    ],
+  });
+  assert.match(one, /记录时间是 2026年10月7日 15:40/);
+  assert.match(one, /写入时间是 2026年10月8日 09:05/);
 });
 
 // Keep record-follow-up coverage in the standard test run.
