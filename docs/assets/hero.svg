@@ -13,36 +13,14 @@
     Encoding note: file is pure ASCII; middle dot / degree / arrow are
     numeric character references so no byte-level encoding can break it.
   -->
-  <defs>
-    <clipPath id="frame">
-      <rect width="1200" height="420" rx="22"/>
-    </clipPath>
-    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#F7F9F9"/>
-    </linearGradient>
-    <linearGradient id="word" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#243D35"/>
-      <stop offset="1" stop-color="#146B60"/>
-    </linearGradient>
-    <linearGradient id="divider" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#146B60"/>
-      <stop offset="0.5" stop-color="#2463C4"/>
-      <stop offset="1" stop-color="#8445B4"/>
-    </linearGradient>
-    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
-      <path d="M24 0H0V24" fill="none" stroke="#243D35" stroke-opacity="0.045" stroke-width="1"/>
-    </pattern>
-    <pattern id="gridFine" width="6" height="6" patternUnits="userSpaceOnUse">
-      <path d="M6 0H0V6" fill="none" stroke="#243D35" stroke-opacity="0.022" stroke-width="0.6"/>
-    </pattern>
-  </defs>
-
-  <g clip-path="url(#frame)">
+  <!--
+    No url(#…) paints. GitHub README loads this file through a redirect, and
+    browsers drop the whole image when a redirected SVG references a fragment.
+  -->
+  <g>
     <!-- chart sheet -->
-    <rect width="1200" height="420" fill="url(#paper)"/>
-    <rect width="1200" height="420" fill="url(#grid)"/>
-    <rect width="1200" height="420" fill="url(#gridFine)"/>
+    <rect width="1200" height="420" fill="#F7F9F9"/>
+    <path fill="none" stroke="#243D35" stroke-opacity="0.045" stroke-width="1" d="M24 0V420 M48 0V420 M72 0V420 M96 0V420 M120 0V420 M144 0V420 M168 0V420 M192 0V420 M216 0V420 M240 0V420 M264 0V420 M288 0V420 M312 0V420 M336 0V420 M360 0V420 M384 0V420 M408 0V420 M432 0V420 M456 0V420 M480 0V420 M504 0V420 M528 0V420 M552 0V420 M576 0V420 M600 0V420 M624 0V420 M648 0V420 M672 0V420 M696 0V420 M720 0V420 M744 0V420 M768 0V420 M792 0V420 M816 0V420 M840 0V420 M864 0V420 M888 0V420 M912 0V420 M936 0V420 M960 0V420 M984 0V420 M1008 0V420 M1032 0V420 M1056 0V420 M1080 0V420 M1104 0V420 M1128 0V420 M1152 0V420 M1176 0V420 M0 24H1200 M0 48H1200 M0 72H1200 M0 96H1200 M0 120H1200 M0 144H1200 M0 168H1200 M0 192H1200 M0 216H1200 M0 240H1200 M0 264H1200 M0 288H1200 M0 312H1200 M0 336H1200 M0 360H1200 M0 384H1200 M0 408H1200"/>
     <rect x="0.5" y="0.5" width="1199" height="419" rx="21.5" fill="none" stroke="#243D35" stroke-opacity="0.28" stroke-width="1"/>
 
     <!-- top ruler: ticks every 40, tall every 160 -->
@@ -58,8 +36,10 @@
       <path d="M69.5 86H75L78 78L82 92L85 83L87.5 86H90.5" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       <text x="106" y="92" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="13" letter-spacing="6" fill="#243D35" fill-opacity="0.62">RARE DISEASE LOG</text>
 
-      <text x="60" y="196" font-family="'Helvetica Neue','Segoe UI',sans-serif" font-size="92" font-weight="800" letter-spacing="-2" fill="url(#word)">Medi-care</text>
-      <rect x="64" y="224" width="560" height="3" rx="1.5" fill="url(#divider)"/>
+      <text x="60" y="196" font-family="'Helvetica Neue','Segoe UI',sans-serif" font-size="92" font-weight="800" letter-spacing="-2" fill="#243D35">Medi-care</text>
+      <rect x="64" y="224" width="186" height="3" rx="1.5" fill="#146B60"/>
+      <rect x="250" y="224" width="188" height="3" rx="1.5" fill="#2463C4"/>
+      <rect x="438" y="224" width="186" height="3" rx="1.5" fill="#8445B4"/>
       <text x="64" y="258" font-family="ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="15" fill="#243D35" fill-opacity="0.78">daily log &#183; trend watch &#183; explainable alert</text>
 
       <!-- double-framed BY nameplate -->
