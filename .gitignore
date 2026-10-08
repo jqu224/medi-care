@@ -12,6 +12,9 @@ coverage/
 *.local
 .test-output/
 
+# Local agent, MCP, and review artifacts
+.impeccable/
+.shots/
 .zion-mcp/
 .zcode/
 
