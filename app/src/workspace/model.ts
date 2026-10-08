@@ -34,6 +34,12 @@ export type Observation = {
   created: string;
   source: string;
   author: string;
+  symptom?: {
+    severity?: 0 | 1 | 2 | 3;
+    impacts: string[];
+    parts: string[];
+    note: string;
+  };
 };
 export type CareEvent = {
   id: string;
@@ -94,7 +100,7 @@ metrics.push(
   { id: "bp", name: "血压", unit: "mmHg", type: "bp" },
   { id: "rash", name: "皮疹", unit: "", type: "boolean" },
   { id: "joint", name: "关节肿痛", unit: "", type: "boolean" },
-  { id: "fatigue", name: "精神差", unit: "", type: "boolean" },
+  { id: "fatigue", name: "精神状态", unit: "", type: "boolean" },
 );
 for (const symptom of SYMPTOMS) {
   if (!metrics.some((m) => m.id === symptom.id))
@@ -254,6 +260,9 @@ export function loadDatabase(
       !Array.isArray(parsed.metrics)
     )
       throw Error("本地数据格式无法读取，请先备份本地数据");
+    parsed.metrics = parsed.metrics.map((m: Metric) =>
+      m.id === "fatigue" ? { ...m, name: "精神状态" } : m,
+    );
     return parsed;
   }
   const db = seedDatabase();
@@ -395,7 +404,9 @@ export function alertsFor(p: Patient) {
     symptoms: p.observations
       .filter(
         (o) =>
-          o.at.slice(0, 10) === date && o.value === "是" && keys.has(o.metric),
+          o.at.slice(0, 10) === date &&
+          (o.value === "是" || (o.symptom?.severity ?? 0) > 0) &&
+          keys.has(o.metric),
       )
       .map((o) => o.metric as SymptomId),
     steroidMg: 0,

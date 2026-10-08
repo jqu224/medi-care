@@ -1,3 +1,8 @@
+import SymptomField from "./SymptomField";
+import SymptomTrend from "./SymptomTrend";
+import { isGradedSymptom, readSymptom, symptomValue, symptomChange, symptomDetail } from "./symptoms";
+import AlertTicker from "./AlertTicker";
+import { careTodos } from "./careTodos";
 import { summarizeHistory } from "./historySummary";
 import { recordDates } from "./recordDates";
 import Learning from "./Learning";
@@ -62,6 +67,7 @@ import type {
   Role,
 } from "./model";
 import "./workspace.css";
+import "./trendDensity.css";
 type Tab = "首页" | "记录" | "趋势" | "照护" | "学习";
 type ModalState = {
   type: "new" | "monitor" | "observation" | "event" | "plan" | "metric";
@@ -120,6 +126,7 @@ export default function Workspace() {
   const [search, setSearch] = useState("");
   const [disease, setDisease] = useState("");
   const [attentionOnly, setAttentionOnly] = useState(false);
+  const [todoOpen, setTodoOpen] = useState(false);
   const [loginRole, setLoginRole] = useState<Role>("patient");
   const [loginOpen, setLoginOpen] = useState(false);
   const [password, setPassword] = useState("");
@@ -140,6 +147,7 @@ export default function Workspace() {
     try {
       localStorage.setItem("nuanshao:demo-session-v1", JSON.stringify(r));
       localStorage.setItem("nuanshao:role", JSON.stringify(r));
+      setTodoOpen(false);
       setRole(r);
       setLoginOpen(false);
       setPassword("");
@@ -311,6 +319,7 @@ export default function Workspace() {
   const patients = allowedPatients(db, actor);
   const patient = patients.find((p) => p.id === patientId) || patients[0];
   const readonly = role === "doctor";
+  const todos = careTodos(patient, db.metrics);
   const update = (fn: (p: Patient) => void, extra?: (d: Database) => void) => {
     const next = mutatePatient(db, actor, patient.id, fn);
     extra?.(next);
@@ -328,6 +337,7 @@ export default function Workspace() {
   const switchPatient = (id: string, source: HTMLButtonElement) => {
     const origin = source.getBoundingClientRect();
     flushSync(() => {
+      setTodoOpen(false);
       setPatientId(id);
       localStorage.setItem("nuanshao:patient", JSON.stringify(id));
       setModal(null);
@@ -607,6 +617,16 @@ export default function Workspace() {
                     </strong>{" "}
                     今日事件
                   </span>
+                  <button
+                    className="todo-status"
+                    aria-expanded={todoOpen}
+                    aria-controls="care-todos"
+                    onClick={() => setTodoOpen(!todoOpen)}
+                  >
+                    <strong>{todos.length}</strong>
+                    <span>To do</span>
+                    <ArrowRight size={17} />
+                  </button>
                   <span>
                     更新于{" "}
                     {patient.observations
@@ -616,7 +636,64 @@ export default function Workspace() {
                       ?.replace("T", " ") || "暂无记录"}
                   </span>
                 </div>
-                <Alerts patient={patient} />
+                {todoOpen && (
+                  <section className="care-todos panel" id="care-todos">
+                    <div className="section-head">
+                      <div>
+                        <h2>{readonly ? "患者待办" : "下一步 To do"}</h2>
+                        <p>先核对计划，再补充缺失记录 · 本地规则提醒</p>
+                      </div>
+                      <button onClick={() => setTodoOpen(false)}>收起</button>
+                    </div>
+                    {!todos.length && (
+                      <p>当前没有待办；有新的实际变化时再记录。</p>
+                    )}
+                    {todos.map((todo, index) => (
+                      <div className="care-todo-row" key={todo.id}>
+                        <span className="todo-order">{index + 1}</span>
+                        <div>
+                          <strong>{todo.title}</strong>
+                          <p>{todo.reason}</p>
+                        </div>
+                        <button
+                          className={index === 0 ? "primary" : "text-button"}
+                          onClick={() => {
+                            if (readonly) {
+                              setTab(todo.kind === "plan" ? "照护" : "记录");
+                              return;
+                            }
+                            if (todo.kind === "plan") {
+                              setTab("照护");
+                              return;
+                            }
+                            const monitor = patient.monitors.find(
+                              (m) => m.id === todo.monitorId,
+                            );
+                            if (monitor && todo.metricId)
+                              setModal({
+                                type: "observation",
+                                monitor: {
+                                  ...monitor,
+                                  metrics: [todo.metricId],
+                                },
+                              });
+                          }}
+                        >
+                          {readonly
+                            ? "查看"
+                            : todo.kind === "plan"
+                              ? "核对计划"
+                              : "去记录"}
+                          <ArrowRight size={16} />
+                        </button>
+                      </div>
+                    ))}
+                    <small>
+                      未记录不等于未完成；检验提示仅核对已有报告，不建议额外检测或调整用药。
+                    </small>
+                  </section>
+                )}
+                <Alerts key={patient.id} patient={patient} />
                 <div className="section-head">
                   <div>
                     <h2>病种监控</h2>
@@ -918,18 +995,57 @@ function Alerts({ patient }: { patient: Patient }) {
           <h2>健康提醒</h2>
           <span>sJIA / MAS · 基于最近记录</span>
         </div>
-        <div className="risk-counts">
-          <span className="risk-red">
-            <b>{alerts.filter((a) => a.level === "red").length}</b> 警报
-          </span>
-          <span className="risk-orange">
-            <b>{alerts.filter((a) => a.level === "yellow").length}</b> 预警
-          </span>
-          {alerts.some((a) => a.level === "watch") && (
-            <span>观察 {alerts.filter((a) => a.level === "watch").length}</span>
-          )}
-        </div>
       </div>
+      <AlertTicker alerts={alerts}>
+        {alerts.map((a) => (
+          <details
+            key={a.id}
+            className={
+              "alert " +
+              (a.level === "red"
+                ? "urgent"
+                : a.level === "yellow"
+                  ? "advisory"
+                  : "watch")
+            }
+          >
+            <summary>
+              <span>
+                <b className="risk-marker risk-marker-label">
+                  {a.level === "red"
+                    ? "重度警报"
+                    : a.level === "yellow"
+                      ? "轻度预警"
+                      : "观察提醒"}
+                </b>{" "}
+                · sJIA / MAS
+              </span>
+              <strong>
+                <span className="risk-marker">{a.title}</span>
+              </strong>
+              <small>查看依据</small>
+            </summary>
+            <div className="evidence">
+              {Object.entries(a.evidence).map(([k, v]) => (
+                <p key={k}>
+                  <b>
+                    {
+                      {
+                        what: "记录",
+                        line: "参考",
+                        duration: "时间",
+                        basis: "依据",
+                        action: "建议",
+                      }[k]
+                    }
+                  </b>
+                  {v}
+                </p>
+              ))}
+            </div>
+          </details>
+        ))}
+      </AlertTicker>
       <div className="threshold-dashboard">
         {comparisons.map(
           ({ m, current, value, threshold, difference, exceeded, change }) => {
@@ -996,54 +1112,6 @@ function Alerts({ patient }: { patient: Patient }) {
       <p className="risk-dashboard-note">
         色彩表示已有规则的提醒级别；阈值内不等于医学正常。竖线为规则阈值，各指标按自身刻度显示。
       </p>
-      {alerts.map((a) => (
-        <details
-          key={a.id}
-          className={
-            "alert " +
-            (a.level === "red"
-              ? "urgent"
-              : a.level === "yellow"
-                ? "advisory"
-                : "watch")
-          }
-        >
-          <summary>
-            <span>
-              <b className="risk-marker risk-marker-label">
-                {a.level === "red"
-                  ? "重度警报"
-                  : a.level === "yellow"
-                    ? "轻度预警"
-                    : "观察提醒"}
-              </b>{" "}
-              · sJIA / MAS
-            </span>
-            <strong>
-              <span className="risk-marker">{a.title}</span>
-            </strong>
-            <small>查看依据</small>
-          </summary>
-          <div className="evidence">
-            {Object.entries(a.evidence).map(([k, v]) => (
-              <p key={k}>
-                <b>
-                  {
-                    {
-                      what: "记录",
-                      line: "参考",
-                      duration: "时间",
-                      basis: "依据",
-                      action: "建议",
-                    }[k]
-                  }
-                </b>
-                {v}
-              </p>
-            ))}
-          </div>
-        </details>
-      ))}
     </section>
   );
 }
@@ -1151,14 +1219,14 @@ function MonitorCard({
                 <ArrowUpRight size={15} />
               </span>
               <div className="metric-value">
-                {o?.value || "未记录"}
+                {o ? symptomValue(o) : "未记录"}
                 <small>{o ? def.unit : ""}</small>
               </div>
               {def.type === "number" ? (
                 <Spark values={values} />
               ) : (
                 <div className="spark-placeholder">
-                  {o?.context || "点击查看记录"}
+                  {o && isGradedSymptom(id) ? symptomChange(o, patient.observations) : o?.context || "点击查看记录"}
                 </div>
               )}
               <small>
@@ -1301,6 +1369,7 @@ function History({
       monitor: "",
       kind: "全部",
       context: "空腹",
+      graphScale: 0,
     }),
   );
   const change = (v: Partial<typeof view>) => {
@@ -1312,6 +1381,7 @@ function History({
       /* browsing state is optional */
     }
   };
+  const graphScale = Math.min(100, Math.max(0, Number(view.graphScale) || 0));
   const [start, end] = periodRange(view.date, view.period);
   const monitor = p.monitors.find((m) => m.id === view.monitor);
   const ids = monitor
@@ -1334,8 +1404,15 @@ function History({
     )
     .sort((a, b) => b.at.localeCompare(a.at));
 
-  const shownObservations = view.kind === "事件" ? [] : observations;
-  const shownEvents = view.kind === "常规检测" ? [] : events;
+  const trendSeries = trends ? ids.map((id) => ({
+    id,
+    def: metrics.find((m) => m.id === id)!,
+    rows: seriesFor(p, id, start, end, view.period, id === "glucose" ? view.context : ""),
+  })) : [];
+  const emptyTrendSeries = trendSeries.filter(({ rows }) => rows.length === 0);
+
+  const shownObservations = !trends && view.kind === "事件" ? [] : observations;
+  const shownEvents = !trends && view.kind === "常规检测" ? [] : events;
   const rows = [
     ...shownObservations.map((o) => ({
       at: o.at,
@@ -1365,12 +1442,13 @@ function History({
         <div>
           <strong>
             {metrics.find((m) => m.id === row.observation!.metric)?.name}{" "}
-            <b>{row.observation!.value}</b>{" "}
+            <b>{symptomValue(row.observation!)}</b>{" "}
             {metrics.find((m) => m.id === row.observation!.metric)?.unit}
           </strong>
           <p>
             {stamp(row.at)} · {row.observation!.context}
           </p>
+          {isGradedSymptom(row.observation!.metric) && <p>{symptomChange(row.observation!, p.observations)} · {symptomDetail(row.observation!)}</p>}
           <small>
             {row.observation!.source} · {row.observation!.author}
           </small>
@@ -1399,14 +1477,56 @@ function History({
     </div>
   );
   return (
-    <div className={"history-workbench " + (trends ? "is-trends" : "")}>
+    <div
+      className={
+        "history-workbench " + (trends ? "is-trends density-workbench" : "")
+      }
+      style={
+        trends
+          ? ({
+              "--trend-card-width": `${300 + graphScale * 3.4}px`,
+              "--trend-chart-height": `${160 + graphScale * 1.4}px`,
+            } as React.CSSProperties)
+          : undefined
+      }
+    >
       <div className="history-controls panel">
+        <div className={trends ? "trend-context" : undefined}>
         <Calendar
           patient={p}
           date={view.date}
           period={view.period}
           onChange={change}
         />
+        {trends && (
+          <section className="trend-period-summary" aria-label="周期聚合分析">
+            <div className="section-head">
+              <h2>{view.period === "月" ? "本月" : view.period === "周" ? "本周" : "当日"}记录概览</h2>
+              <small>{dates.length} 个记录日</small>
+            </div>
+            <dl className="trend-summary-counts">
+              {[
+                ["检测", summary.sessions, "次"],
+                ["治疗与就诊", summary.events, "条"],
+                ["住院", summary.admissions, "次"],
+                ["输液", summary.infusions, "次"],
+              ].map(([label, value, unit]) => (
+                <div key={label}><dt>{label}</dt><dd>{value}<small>{unit}</small></dd></div>
+              ))}
+            </dl>
+            <p className="trend-assessment">
+              {summary.assessed
+                ? <>已评估 {summary.assessed} 项检测，其中 <strong>{summary.exceededIds.length} 项超阈值</strong></>
+                : "此范围暂无可评估阈值的检测"}
+            </p>
+            <small>按所选日期与病种汇总。超阈值按检测项计数，不等于警报次数。</small>
+            <details className="trend-shared-events" key={p.id + start + end + view.monitor}>
+              <summary>同期事件 <span>{events.length} 条 · 展开查看</span></summary>
+              {events.length ? events.map((e) => <EventRow key={e.id} event={e} />) : <p>这段时间没有治疗或就诊事件</p>}
+            </details>
+          </section>
+        )}
+        </div>
         <div className="filter-row">
           <select
             aria-label="病种筛选"
@@ -1420,6 +1540,26 @@ function History({
               </option>
             ))}
           </select>
+          {trends && (
+            <label className="graph-scale-control">
+              <span>图表大小</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="5"
+                value={graphScale}
+                aria-label="图表大小"
+                aria-valuetext={
+                  graphScale < 35 ? "紧凑" : graphScale < 70 ? "标准" : "宽幅"
+                }
+                onChange={(e) => change({ graphScale: Number(e.target.value) })}
+              />
+              <output>
+                {graphScale < 35 ? "紧凑" : graphScale < 70 ? "标准" : "宽幅"}
+              </output>
+            </label>
+          )}
           {!trends && (
             <select
               aria-label="记录类型"
@@ -1438,16 +1578,7 @@ function History({
       </div>
       {trends ? (
         <div className="trend-grid">
-          {ids.map((id) => {
-            const def = metrics.find((m) => m.id === id)!;
-            const rows = seriesFor(
-              p,
-              id,
-              start,
-              end,
-              view.period,
-              id === "glucose" ? view.context : "",
-            );
+          {trendSeries.filter(({ rows }) => rows.length > 0).map(({ id, def, rows }) => {
             return (
               <section className="panel" key={id}>
                 <div className="section-head">
@@ -1471,9 +1602,11 @@ function History({
                   )}
                 </div>
                 {rows.length ? (
-                  def.type === "number" || def.type === "bp" ? (
+                  isGradedSymptom(id) ? (
+                    <><SymptomTrend id={id} rows={rows} />{rows.map(o => <p key={o.id}>{stamp(o.at)} · {symptomValue(o)} · {symptomChange(o, p.observations)}<br />{symptomDetail(o)}</p>)}</>
+                  ) : def.type === "number" || def.type === "bp" ? (
                     <div className="chart">
-                      <ResponsiveContainer width="100%" height={210}>
+                      <ResponsiveContainer width="100%" height="100%">
                         <LineChart
                           data={rows.map((o) => ({
                             date: o.at.slice(5).replace("T", " "),
@@ -1547,17 +1680,29 @@ function History({
                 ) : (
                   <Empty text="此时间范围没有记录" />
                 )}
-                {events.length > 0 && (
-                  <details>
-                    <summary>同期事件 · {events.length} 条</summary>
-                    {events.map((e) => (
-                      <EventRow key={e.id} event={e} />
-                    ))}
-                  </details>
-                )}
+
               </section>
             );
           })}
+          {emptyTrendSeries.length > 0 && (
+            <details className="trend-empty-group" key={p.id + start + end + view.monitor + view.context}>
+              <summary>暂无记录 <span>{emptyTrendSeries.length} 项指标</span></summary>
+              <p>所选时间范围内暂无记录，不代表正常或数值为零。</p>
+              <ul>
+                {emptyTrendSeries.map(({ id, def }) => (
+                  <li key={id}>
+                    <span>{def.name}</span>
+                    {id === "glucose" && (
+                      <select aria-label="血糖背景" value={view.context}
+                        onChange={(e) => change({ context: e.target.value })}>
+                        {["空腹", "餐后", "随机"].map((c) => <option key={c}>{c}</option>)}
+                      </select>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       ) : (
         <section className="panel timeline">
@@ -1807,6 +1952,7 @@ function Editor({
   onDone: () => void;
 }) {
   const [error, setError] = useState("");
+  const [observationAt, setObservationAt] = useState(modal.observation?.at || modal.event?.at || now());
   const [preset, setPreset] = useState(modal.monitor?.preset || "sjia");
   const [selected, setSelected] = useState<string[]>(
     modal.observation
@@ -1860,7 +2006,8 @@ function Editor({
         const group = modal.observation?.group || uid();
         const rows = selected.flatMap((id) => {
           const def = db.metrics.find((m) => m.id === id)!;
-          let value = v(id).trim();
+          const graded = isGradedSymptom(id) ? readSymptom(f, id) : null;
+          let value = isGradedSymptom(id) ? graded?.value || "" : v(id).trim();
           if (def.type === "bp")
             value = value && v(id + "-dia") ? value + "/" + v(id + "-dia") : "";
           if (!value) return [];
@@ -1874,6 +2021,7 @@ function Editor({
               id: modal.observation?.id || uid(),
               group,
               metric: id,
+              ...(graded ? { symptom: graded.symptom } : {}),
               value,
               at,
               created: modal.observation?.created || now(),
@@ -1968,11 +2116,12 @@ function Editor({
           .map((o) => (
             <div className="timeline-item" key={o.id}>
               <strong>
-                {o.value} {m.unit}
+                {symptomValue(o)} {m.unit}
               </strong>
               <p>
                 {stamp(o.at)} · {o.context}
               </p>
+              {isGradedSymptom(o.metric) && <p>{symptomChange(o, patient.observations)} · {symptomDetail(o)}</p>}
               <small>
                 {o.source} · {o.author}
               </small>
@@ -2121,7 +2270,8 @@ function Editor({
                 : "datetime-local"
             }
             name="at"
-            defaultValue={modal.observation?.at || modal.event?.at || now()}
+            value={observationAt}
+            onChange={e => setObservationAt(e.target.value)}
           />
         </label>
       )}
@@ -2167,6 +2317,7 @@ function Editor({
           <p className="form-help">只填写实际检测的项目，留空不会生成记录。</p>
           {selected.map((id) => {
             const m = db.metrics.find((m) => m.id === id)!;
+            if (isGradedSymptom(id)) return <SymptomField key={id} id={id} observations={patient.observations} at={observationAt} editing={modal.observation} />;
             return (
               <label key={id}>
                 {m.name} {m.unit && `（${m.unit}）`}

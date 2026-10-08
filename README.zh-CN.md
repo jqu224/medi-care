@@ -3,7 +3,7 @@
 </div>
 
 <div align="center">
-<pre>~/medi-care (main*)  14 tests  port 7100</pre>
+<pre>~/medi-care (main*)  19 tests  port 7100</pre>
 </div>
 
 <div align="center">
@@ -22,7 +22,7 @@
 [![license](https://img.shields.io/badge/license-MIT-0A2F2F?style=flat-square)](LICENSE)
 [![react](https://img.shields.io/badge/react-19-555555?style=flat-square)](app/package.json)
 [![vite](https://img.shields.io/badge/vite-7-0A2F2F?style=flat-square)](app/package.json)
-[![tests](https://img.shields.io/badge/tests-14-555555?style=flat-square)](app/tests/model.test.ts)
+[![tests](https://img.shields.io/badge/tests-19-555555?style=flat-square)](app/tests/model.test.ts)
 [![runtime](https://img.shields.io/badge/data-localStorage-0A2F2F?style=flat-square)](app/README.md)
 
 这是一个移动端优先的 Web 应用：记录症状、体温和用药，并在数值越过观察线时写明原因。

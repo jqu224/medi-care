@@ -2304,3 +2304,86 @@ button:disabled {
 .daily-record-group > summary:focus-visible { outline:2px solid #146b60; outline-offset:2px; }
 .daily-record-group > div { padding:0 8px; }
 @media(max-width:767px) { .month-summary-grid { gap:8px 12px; } .daily-record-group > summary { align-items:flex-start; } .daily-record-badges { max-width:43%; } }
+@media(min-width:1280px) { .workspace .history-controls { top:calc(var(--header-height) + 16px); } }
+/* Compact metric columns, an unhurried risk ticker, and actionable record follow-up. */
+.workspace .threshold-dashboard { grid-template-columns:repeat(auto-fit,minmax(190px,280px)); gap:0 18px; padding:0 16px; }
+.workspace .threshold-metric { padding:12px 0; }
+.workspace .threshold-value { font-size:25px; }
+.workspace .threshold-delta { font-size:11px; }
+.workspace .threshold-reference { gap:4px; font-size:10px; }
+.workspace .threshold-metric footer { gap:3px; flex-direction:column; }
+.workspace .risk-dashboard-heading { padding:12px 16px; }
+.ticker-bar { display:flex; align-items:center; background:#faf6ee; border-bottom:1px solid #e7ded2; min-width:0; }
+.workspace .ticker-open { flex:1; min-width:0; min-height:56px; justify-content:flex-start; text-align:left; padding:8px 14px; gap:14px; }
+.ticker-open > svg { flex-shrink:0; color:#735f47; }
+.ticker-levels { display:flex; flex-shrink:0; gap:12px; font-size:11px; }
+.ticker-red { color:#ad2939; }
+.ticker-orange { color:#9b570c; }
+.ticker-headline { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; animation:ticker-enter 220ms ease-out; }
+.ticker-expand { display:flex; gap:5px; align-items:center; margin-left:auto; flex-shrink:0; font-size:11px; }
+.ticker-controls { display:flex; align-items:center; padding-right:8px; flex-shrink:0; font-size:10px; color:#685947; }
+.workspace .ticker-controls button { min-width:44px; padding:0; }
+.workspace .ticker-controls button:hover, .workspace .ticker-open:hover { background:#f0e9dd; }
+.ticker-details { border-bottom:1px solid #e7ded2; }
+@keyframes ticker-enter { from {opacity:.4;transform:translateY(4px);} to {opacity:1;transform:translateY(0);} }
+.workspace .status-strip .todo-status { border:1px solid #a8cabb; background:#e8f4ed; padding:4px 12px; border-radius:8px; color:#174e3b; gap:8px; }
+.workspace .status-strip .todo-status > span { width:auto; margin:0; font-size:12px; }
+.workspace .todo-status[aria-expanded=true] svg { transform:rotate(90deg); }
+.workspace .care-todos { margin-bottom:16px; padding:14px 16px; }
+.care-todos .section-head p { font-size:11px; }
+.care-todo-row { display:flex; align-items:center; gap:12px; padding:12px 0; border-top:1px solid #e5ebe7; }
+.todo-order { min-width:22px; font-size:12px; color:#658174; font-variant-numeric:tabular-nums; }
+.care-todo-row > div { flex:1; min-width:0; }
+.care-todo-row strong { font-size:13px; }
+.workspace .care-todo-row p { font-size:11px; margin:2px 0 0; }
+.care-todo-row > button { flex-shrink:0; padding:6px 10px; font-size:12px; }
+.care-todos > small { display:block; font-size:10px; margin-top:10px; color:#5d6d69; }
+@media(max-width:767px) {
+ .workspace .threshold-dashboard { grid-template-columns:repeat(2,minmax(0,1fr)); padding:0 12px; gap:0 14px; }
+ .ticker-bar { flex-wrap:wrap; }
+ .workspace .ticker-open { flex-basis:100%; flex-wrap:wrap; gap:8px; padding:10px 12px; }
+ .ticker-headline { order:4; flex:1 0 100%; }
+ .ticker-controls { width:100%; justify-content:flex-end; border-top:1px solid #e7ded2; }
+ .ticker-levels { gap:10px; }
+ .workspace .care-todos { padding:12px; }
+}
+@media(prefers-reduced-motion:reduce) { .ticker-headline { animation:none; } }
+.symptom-field { padding:16px; margin:8px 0; border:1px solid #d9e5dd; border-radius:10px; }
+.symptom-field > legend { font-weight:650; padding:0 6px; font-size:15px; }
+.symptom-field > label { display:grid; gap:6px; margin-top:12px; }
+.symptom-previous { font-size:12px; color:#315d4b; background:#eef6f1; padding:8px 10px; border-radius:6px; }
+.symptom-anchor { font-size:12px; margin-top:8px; color:#315d4b; }
+.symptom-options { display:flex; flex-wrap:wrap; gap:8px 14px; padding:0; border:0; margin:14px 0; }
+.symptom-options legend { font-size:12px; margin-bottom:8px; }
+.editor .symptom-options label { display:flex; align-items:center; flex-direction:row; gap:7px; min-height:44px; margin:0; font-size:12px; }
+.editor .symptom-options input { width:17px; min-height:17px; height:17px; margin:0; }
+.symptom-field small, .symptom-trend > p, .symptom-trend > small { font-size:11px; color:#5d6d69; }
+.symptom-field select { max-width:100%; font-size:12px; }
+.symptom-field textarea { width:100%; }
+
+/* Fixed severity counters anchor a continuous horizontal alert feed. */
+.ticker-bar { background:#fff; }
+.workspace .ticker-open { gap:16px; padding:10px 14px; }
+.ticker-levels { gap:8px; }
+.ticker-levels > b { display:flex; align-items:center; gap:10px; padding:5px 9px; border:1px solid #cad7d1; border-radius:6px; white-space:nowrap; background:#f7f9f8; font-size:12px; font-weight:600; }
+.ticker-levels > .ticker-red { border-color:#e5a4ae; background:#fff0f2; color:#a31f35; }
+.ticker-levels > .ticker-orange { border-color:#e8bd83; background:#fff5e6; color:#8d4b05; }
+.ticker-levels strong { font-size:20px; line-height:1.15; font-weight:750; font-variant-numeric:tabular-nums; }
+.ticker-window { display:block; flex:1; min-width:0; overflow:hidden; text-align:left; border-left:1px solid #e4e9e8; padding-left:14px; }
+.ticker-track { display:flex; width:max-content; animation:ticker-scroll linear infinite; }
+.ticker-run { display:flex; flex-shrink:0; }
+.ticker-message { display:flex; align-items:center; gap:9px; padding-right:40px; white-space:nowrap; font-size:13px; color:#243d35; }
+.ticker-message > span { font-size:11px; font-weight:650; }
+.ticker-static { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px; }
+@keyframes ticker-scroll { to { transform:translateX(-50%); } }
+@media(max-width:767px) {
+ .ticker-bar { position:relative; }
+ .workspace .ticker-open { gap:10px; padding:12px; }
+ .ticker-levels { gap:6px; }
+ .ticker-levels > b { gap:7px; padding:5px 8px; font-size:11px; }
+ .ticker-window { order:4; flex:1 0 100%; border-left:0; border-top:1px solid #e4e9e8; padding:12px 0 2px; }
+ .ticker-controls { background:#f8faf9; }
+}
+@media(prefers-reduced-motion:reduce) { .ticker-track { animation:none; } }
+.workspace .alerts { grid-template-columns:minmax(0,1fr); }
+.alert-ticker { min-width:0; max-width:100%; }
