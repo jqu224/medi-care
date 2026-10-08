@@ -1,0 +1,73 @@
+/* The calendar and period evidence form one rail; metrics form a separate grid. */
+.workspace .history-workbench.is-trends.density-workbench {
+  container-type:inline-size;
+  display:grid;
+  grid-template-columns:minmax(300px,340px) minmax(0,1fr);
+  gap:14px;
+  align-items:start;
+}
+.workspace .density-workbench > .history-controls { display:contents; }
+.workspace .density-workbench .trend-context { min-width:0; grid-column:1; }
+.workspace .density-workbench > .trend-grid {
+  display:grid; grid-column:2;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,var(--trend-card-width)),1fr));
+  gap:14px; min-width:0; margin:0; align-items:start;
+}
+.workspace .density-workbench .calendar-shell {
+  width:100%; max-width:none; margin:0; padding:12px;
+  border:1px solid var(--line); border-radius:12px; background:white;
+}
+.workspace .density-workbench .filter-row {
+  grid-column:1/-1; grid-row:1; padding:8px 12px; border:1px solid var(--line);
+  border-radius:10px; background:#fafbfb; gap:12px; margin:0;
+}
+.workspace .density-workbench .filter-row select { width:180px; max-width:100%; min-height:44px; }
+.workspace .density-workbench .filter-row > small { width:auto; margin-left:auto; }
+.graph-scale-control { display:flex; align-items:center; gap:10px; min-height:44px; font-size:12px; color:#435b51; }
+.workspace .graph-scale-control input[type=range] { width:120px; min-width:80px; height:44px; margin:0; padding:0; border:0; background:transparent; cursor:ew-resize; accent-color:#146b60; }
+.graph-scale-control output { min-width:28px; font-size:11px; color:#5d6d69; }
+.workspace .density-workbench .trend-grid > .panel { min-width:0; padding:14px; margin:0; }
+.workspace .density-workbench .chart { height:var(--trend-chart-height); margin:8px 0 0 -8px; }
+.workspace .density-workbench .section-head { margin-bottom:8px; gap:8px; }
+.workspace .density-workbench .section-head h2 { font-size:15px; }
+.workspace .density-workbench .section-head p { font-size:11px; }
+.workspace .density-workbench .calendar-toolbar { gap:4px; }
+.workspace .density-workbench .calendar-toolbar .segmented { width:108px; flex-basis:108px; }
+.workspace .density-workbench .calendar-navigation > button { flex-basis:40px; min-width:40px; }
+.workspace .density-workbench .calendar-navigation .calendar-date-title { min-width:76px; }
+.trend-period-summary { margin-top:12px; padding:14px; border:1px solid var(--line); border-radius:12px; background:white; }
+.trend-period-summary small { font-size:11px; color:#5d6d69; }
+.trend-summary-counts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:14px 0; }
+.trend-summary-counts dt { font-size:12px; color:#5d6d69; }
+.trend-summary-counts dd { margin:2px 0 0; font-size:24px; line-height:1.2; font-weight:650; font-variant-numeric:tabular-nums; }
+.trend-summary-counts dd small { margin-left:5px; font-weight:400; }
+.trend-assessment { font-size:12px; margin:12px 0 4px; }
+.trend-shared-events { margin-top:14px; border-top:1px solid var(--line); }
+.trend-shared-events summary { min-height:44px; padding:12px 0; cursor:pointer; font-size:13px; }
+.trend-shared-events summary span { font-size:11px; color:#5d6d69; margin-left:8px; }
+.trend-shared-events > p { font-size:12px; color:#5d6d69; }
+@container (max-width:720px) {
+ .workspace .density-workbench .trend-context,
+ .workspace .density-workbench > .trend-grid { grid-column:1/-1; }
+}
+@media(max-width:1199px) {
+ .workspace .history-workbench.is-trends.density-workbench { grid-template-columns:1fr; }
+ .workspace .density-workbench > .trend-grid { grid-column:1; }
+}
+@media(max-width:767px) {
+ .workspace .density-workbench .filter-row { gap:4px 10px; }
+ .workspace .density-workbench .filter-row select { width:132px; }
+ .graph-scale-control { flex:1; gap:5px; font-size:11px; }
+ .workspace .graph-scale-control input[type=range] { width:65px; min-width:45px; flex:1; }
+ .graph-scale-control output { display:none; }
+ .workspace .density-workbench .filter-row > small { width:100%; margin:0; }
+}
+
+/* Empty series stay discoverable without competing with measured data. */
+.trend-empty-group { grid-column:1/-1; border-top:1px solid var(--line); padding:4px 0; color:#5d6d69; }
+.trend-empty-group summary { min-height:44px; padding:12px 4px; cursor:pointer; font-size:13px; }
+.trend-empty-group summary > span { margin-left:8px; font-size:12px; }
+.trend-empty-group > p { font-size:12px; margin:0 4px 10px; }
+.trend-empty-group ul { list-style:none; margin:0; padding:0 4px; display:flex; flex-wrap:wrap; gap:8px 20px; }
+.trend-empty-group li { display:flex; align-items:center; gap:10px; font-size:13px; min-height:32px; }
+.workspace .trend-empty-group select { width:auto; min-height:44px; }

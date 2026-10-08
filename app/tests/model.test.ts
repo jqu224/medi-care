@@ -232,3 +232,42 @@ test("monthly summaries deduplicate submissions, not observations, and count adm
   assert.equal(summarizeHistory(p,observations,events,db.metrics).assessed,0);
   assert.equal(summarizeHistory(p,[],[],db.metrics).records,0);
 });
+
+import { readSymptom, symptomChange, symptomValue, previousSymptom, isGradedSymptom } from "../src/workspace/symptoms";
+test("symptom grades keep missing and legacy values separate from zero", () => {
+  const blank = new FormData();
+  assert.equal(readSymptom(blank,"joint"), null);
+  blank.set("joint-note","走路不便");
+  assert.throws(()=>readSymptom(blank,"joint"),/请先选择/);
+  blank.set("joint","0");
+  const zero = readSymptom(blank,"joint")!;
+  assert.equal(zero.symptom.severity,0);
+  assert.equal(zero.value,"无");
+  blank.set("joint","legacy-yes");
+  assert.equal(readSymptom(blank,"joint")!.symptom.severity,undefined);
+  const base = seedDatabase().patients[0].observations[0];
+  const old = {...base,id:"old",metric:"joint",value:"是",at:"2026-10-01"};
+  assert.equal(symptomValue(old),"有症状，程度未记录");
+  const moderate = {...base,id:"moderate",metric:"joint",value:"中",at:"2026-10-02T10:00",symptom:{severity:2 as const,impacts:["走路受限"],parts:[],note:"下楼困难"}};
+  const mild = {...moderate,id:"mild",value:"轻",at:"2026-10-03T10:00",symptom:{...moderate.symptom,severity:1 as const}};
+  assert.equal(symptomChange(moderate,[old,moderate,mild]),"程度未记录，无法比较变化");
+  assert.equal(symptomChange(mild,[old,moderate,mild]),"较上次减轻 1 档");
+  assert.equal(previousSymptom([old,moderate,mild],"joint","2026-10-02T09:00")!.id,"old");
+  assert.equal(isGradedSymptom("cns"),false);
+});
+test("symptom impacts, rash locations and notes survive persistence without rewriting legacy observations", () => {
+  const storage=memory();
+  const db=seedDatabase();
+  const form=new FormData();
+  form.set("rash","2"); form.append("rash-part","躯干");form.append("rash-part","上肢");form.append("rash-impact","影响睡眠");form.set("rash-note","晚上更明显");
+  const graded=readSymptom(form,"rash")!;
+  const original=db.patients[0].observations[0];
+  db.patients[0].observations.push({...original,id:"graded",metric:"rash",...graded});
+  commit(storage,db);
+  const restored=loadDatabase(storage);
+  assert.deepEqual(restored.patients[0].observations.find(o=>o.id==="graded")!.symptom,{severity:2,impacts:["影响睡眠"],parts:["躯干","上肢"],note:"晚上更明显"});
+  assert.deepEqual(restored.patients[0].observations[0],original);
+});
+
+// Keep record-follow-up coverage in the standard test run.
+import './careTodos.test';

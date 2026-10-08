@@ -3,7 +3,7 @@
 </div>
 
 <div align="center">
-<pre>~/medi-care (main*)  14 tests  port 7100</pre>
+<pre>~/medi-care (main*)  19 tests  port 7100</pre>
 </div>
 
 <div align="center">
@@ -22,7 +22,7 @@ Daily logs and explainable trend alerts for rare-disease care.
 [![license](https://img.shields.io/badge/license-MIT-0A2F2F?style=flat-square)](LICENSE)
 [![react](https://img.shields.io/badge/react-19-555555?style=flat-square)](app/package.json)
 [![vite](https://img.shields.io/badge/vite-7-0A2F2F?style=flat-square)](app/package.json)
-[![tests](https://img.shields.io/badge/tests-14-555555?style=flat-square)](app/tests/model.test.ts)
+[![tests](https://img.shields.io/badge/tests-19-555555?style=flat-square)](app/tests/model.test.ts)
 [![runtime](https://img.shields.io/badge/data-localStorage-0A2F2F?style=flat-square)](app/README.md)
 
 A mobile-first web app for recording symptoms, temperature, and medication, then showing why a trend crossed a watch line.
