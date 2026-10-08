@@ -66,11 +66,27 @@ export type CarePlan = {
   date: string;
   active: boolean;
 };
+export type BodyProfile = {
+  sex: "" | "男" | "女";
+  heightCm: number | null;
+  weightKg: number | null;
+};
+export type BenchmarkLine = {
+  low?: number;
+  high?: number;
+  sysLow?: number;
+  sysHigh?: number;
+  diaLow?: number;
+  diaHigh?: number;
+};
+export type Benchmarks = Record<string, BenchmarkLine>;
 export type Patient = {
   settings?: AlertSettings;
   id: string;
   name: string;
   description: string;
+  profile: BodyProfile;
+  benchmarks: Benchmarks;
   monitors: Monitor[];
   observations: Observation[];
   events: CareEvent[];
@@ -151,11 +167,46 @@ function monitor(preset: string): Monitor {
   const p = presets.find((p) => p.id === preset)!;
   return { ...p, preset, id: uid(), metrics: [...p.metrics], active: true };
 }
+const EMPTY_BODY: BodyProfile = { sex: "", heightCm: null, weightKg: null };
+const DEMO_BODY: Record<string, BodyProfile> = {
+  p1: { sex: "男", heightCm: 122, weightKg: 23 },
+  p2: { sex: "男", heightCm: 172, weightKg: 70 },
+  p3: { sex: "女", heightCm: 160, weightKg: 68 },
+};
+const DEMO_BENCHMARKS: Record<string, Benchmarks> = {
+  p1: {
+    temp: { high: 37.3 },
+    ferritin: { high: 684 },
+    platelet: { low: 181 },
+    fibrinogen: { low: 3.6 },
+    ast: { high: 48 },
+    tg: { high: 156 },
+    ldh: { high: 800 },
+  },
+  p2: {
+    glucose: { high: 7.8 },
+    a1c: { high: 7 },
+    bp: { sysLow: 90, sysHigh: 140, diaLow: 60, diaHigh: 90 },
+  },
+  p3: {
+    hr: { low: 60, high: 100 },
+    bp: { sysLow: 90, sysHigh: 140, diaLow: 60, diaHigh: 90 },
+    weight: { low: 64, high: 71 },
+  },
+};
+function bodyFor(id: string): BodyProfile {
+  return { ...(DEMO_BODY[id] ?? EMPTY_BODY) };
+}
+function benchmarksFor(id: string): Benchmarks {
+  return structuredClone(DEMO_BENCHMARKS[id] ?? {});
+}
 export function seedDatabase(): Database {
   const first: Patient = {
     id: "p1",
     name: "小宇",
     description: "7 岁 · sJIA 随访",
+    profile: bodyFor("p1"),
+    benchmarks: benchmarksFor("p1"),
     monitors: [monitor("sjia"), monitor("mas")],
     observations: [],
     events: [],
@@ -204,6 +255,8 @@ export function seedDatabase(): Database {
       id: "p2",
       name: "林安",
       description: "42 岁 · 糖尿病随访",
+      profile: bodyFor("p2"),
+      benchmarks: benchmarksFor("p2"),
       monitors: [monitor("diabetes")],
       observations: [],
       events: [],
@@ -213,6 +266,8 @@ export function seedDatabase(): Database {
       id: "p3",
       name: "周宁",
       description: "58 岁 · 心脏健康随访",
+      profile: bodyFor("p3"),
+      benchmarks: benchmarksFor("p3"),
       monitors: [monitor("heart")],
       observations: [],
       events: [],
@@ -222,16 +277,21 @@ export function seedDatabase(): Database {
   for (const p of others)
     for (let i = 20; i >= 0; i--) {
       const day = addDaysISO(todayISO(), -i);
+      const outlier = i === 0;
       const vals =
         p.id === "p2"
           ? {
-              glucose: String((6.5 + Math.sin(i) * 0.5).toFixed(1)),
+              glucose: outlier
+                ? "9.4"
+                : String((6.5 + Math.sin(i) * 0.5).toFixed(1)),
               bp: "124/78",
             }
           : {
-              hr: String(70 + Math.round(Math.sin(i) * 5)),
-              weight: String((68 + Math.sin(i) * 0.3).toFixed(1)),
-              bp: "122/76",
+              hr: outlier ? "112" : String(70 + Math.round(Math.sin(i) * 5)),
+              weight: outlier
+                ? "72.4"
+                : String((68 + Math.sin(i) * 0.3).toFixed(1)),
+              bp: outlier ? "158/96" : "122/76",
             };
       for (const [metric, value] of Object.entries(vals))
         p.observations.push({
@@ -263,6 +323,10 @@ export function loadDatabase(
     parsed.metrics = parsed.metrics.map((m: Metric) =>
       m.id === "fatigue" ? { ...m, name: "精神状态" } : m,
     );
+    for (const p of parsed.patients as Patient[]) {
+      if (!p.profile) p.profile = bodyFor(p.id);
+      if (!p.benchmarks) p.benchmarks = benchmarksFor(p.id);
+    }
     return parsed;
   }
   const db = seedDatabase();

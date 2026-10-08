@@ -145,6 +145,16 @@ test("nonclinical presets and paused monitors never inherit MAS alerts", () => {
   db.patients[0].monitors.forEach((m) => (m.active = false));
   assert.equal(alertsFor(db.patients[0]).length, 0);
 });
+test("cluster alert explains the watch line in plain language", () => {
+  const cluster = alertsFor(seedDatabase().patients[0]).find((a) => a.id === "cluster");
+  assert.ok(cluster);
+  assert.equal(cluster.title.includes("PRINTO"), false);
+  assert.equal(cluster.evidence.basis.includes("PRINTO"), false);
+  assert.equal(cluster.evidence.line.includes("PRINTO"), false);
+  assert.equal(cluster.evidence.action.startsWith("建议"), false);
+  assert.match(cluster.evidence.basis, /铁蛋白高于 684/);
+  assert.match(cluster.evidence.line, /血小板观察线 181/);
+});
 
 import { monthDates, shiftMonth } from "../src/workspace/calendarMath";
 test("month grid covers the month without redundant weeks", () => {
@@ -205,6 +215,7 @@ test("moving October to November synchronizes the month selection and data windo
 });
 
 import { summarizeHistory } from "../src/workspace/historySummary";
+import { rateObservation } from "../src/workspace/benchmark";
 test("monthly summaries deduplicate submissions, not observations, and count admissions by event type", () => {
   const db = seedDatabase();
   const p = db.patients[0];
@@ -231,6 +242,43 @@ test("monthly summaries deduplicate submissions, not observations, and count adm
   p.monitors.forEach(m=>m.active=false);
   assert.equal(summarizeHistory(p,observations,events,db.metrics).assessed,0);
   assert.equal(summarizeHistory(p,[],[],db.metrics).records,0);
+});
+test("each patient benchmark colors only stored lines on active monitors", () => {
+  const db = seedDatabase();
+  const zhou = db.patients[2];
+  const base = zhou.observations[0];
+  const inside = { ...base, id: "in", metric: "weight", value: "68.2" };
+  const outside = { ...base, id: "out", metric: "weight", value: "72.4" };
+  const high = { ...base, id: "hi", metric: "bp", value: "158/96" };
+  const ok = { ...base, id: "ok", metric: "bp", value: "122/76" };
+  assert.equal(rateObservation(zhou, inside, "kg")?.exceeded, false);
+  assert.equal(rateObservation(zhou, outside, "kg")?.note, "高于 71 kg");
+  assert.match(rateObservation(zhou, high)?.note ?? "", /收缩压高于 140/);
+  assert.equal(rateObservation(zhou, ok)?.exceeded, false);
+  const s = summarizeHistory(zhou, [inside, outside, high, ok], [], db.metrics);
+  assert.deepEqual(s.exceededIds, ["out", "hi"]);
+  assert.equal(s.assessed, 4);
+  delete zhou.benchmarks.weight;
+  assert.equal(summarizeHistory(zhou, [outside], [], db.metrics).assessed, 0);
+  zhou.monitors.forEach((m) => (m.active = false));
+  zhou.benchmarks = seedDatabase().patients[2].benchmarks;
+  assert.equal(summarizeHistory(zhou, [outside, high], [], db.metrics).assessed, 0);
+});
+test("stored patients gain demo body profile and benchmarks when those fields are missing", () => {
+  const storage = memory();
+  const db = seedDatabase();
+  delete (db.patients[0] as { profile?: unknown }).profile;
+  delete (db.patients[0] as { benchmarks?: unknown }).benchmarks;
+  storage.setItem(KEY, JSON.stringify(db));
+  const loaded = loadDatabase(storage);
+  assert.equal(loaded.patients[0].profile.sex, "男");
+  assert.equal(loaded.patients[0].profile.heightCm, 122);
+  assert.equal(loaded.patients[0].profile.weightKg, 23);
+  assert.equal(loaded.patients[0].benchmarks.ferritin?.high, 684);
+  loaded.patients[1].profile.weightKg = 71;
+  storage.setItem(KEY, JSON.stringify(loaded));
+  assert.equal(loadDatabase(storage).patients[1].profile.weightKg, 71);
+  assert.equal(loadDatabase(storage).patients[1].profile.heightCm, 172);
 });
 
 import { readSymptom, symptomChange, symptomValue, previousSymptom, isGradedSymptom } from "../src/workspace/symptoms";

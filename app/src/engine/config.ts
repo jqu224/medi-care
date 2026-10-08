@@ -24,11 +24,11 @@ export interface MetricDef {
 
 export const METRICS: MetricDef[] = [
   { key: 'temp', name: '体温', short: '体温', unit: '℃', threshold: 37.3, direction: 'high', decimals: 1, core: true, refLabel: '发热参考线 37.3℃' },
-  { key: 'ferritin', name: '铁蛋白', short: '铁蛋白', unit: 'ng/mL', threshold: 684, direction: 'high', decimals: 0, core: true, refLabel: 'PRINTO 阈值 684 ng/mL' },
-  { key: 'platelet', name: '血小板', short: '血小板', unit: '×10⁹/L', threshold: 181, direction: 'low', decimals: 0, core: true, refLabel: 'PRINTO 阈值 181 ×10⁹/L' },
-  { key: 'fibrinogen', name: '纤维蛋白原', short: '纤维蛋白原', unit: 'g/L', threshold: 3.6, direction: 'low', decimals: 1, core: false, refLabel: 'PRINTO 阈值 3.6 g/L' },
-  { key: 'ast', name: '谷草转氨酶', short: 'AST', unit: 'U/L', threshold: 48, direction: 'high', decimals: 0, core: false, refLabel: 'PRINTO 阈值 48 U/L' },
-  { key: 'tg', name: '甘油三酯', short: '甘油三酯', unit: 'mg/dL', threshold: 156, direction: 'high', decimals: 0, core: false, refLabel: 'PRINTO 阈值 156 mg/dL' },
+  { key: 'ferritin', name: '铁蛋白', short: '铁蛋白', unit: 'ng/mL', threshold: 684, direction: 'high', decimals: 0, core: true, refLabel: '观察线 684 ng/mL' },
+  { key: 'platelet', name: '血小板', short: '血小板', unit: '×10⁹/L', threshold: 181, direction: 'low', decimals: 0, core: true, refLabel: '观察线 181 ×10⁹/L' },
+  { key: 'fibrinogen', name: '纤维蛋白原', short: '纤维蛋白原', unit: 'g/L', threshold: 3.6, direction: 'low', decimals: 1, core: false, refLabel: '观察线 3.6 g/L' },
+  { key: 'ast', name: '谷草转氨酶', short: 'AST', unit: 'U/L', threshold: 48, direction: 'high', decimals: 0, core: false, refLabel: '观察线 48 U/L' },
+  { key: 'tg', name: '甘油三酯', short: '甘油三酯', unit: 'mg/dL', threshold: 156, direction: 'high', decimals: 0, core: false, refLabel: '观察线 156 mg/dL' },
   { key: 'ldh', name: '乳酸脱氢酶', short: 'LDH', unit: 'U/L', direction: 'high', decimals: 0, core: false, refLabel: '监测项，无固定阈值' },
 ]
 
@@ -80,12 +80,12 @@ export const RED_FLAG_SYMPTOMS: SymptomId[] = ['bleeding', 'cns']
 
 /** 指南依据文案（警报卡第五段用） */
 export const BASIS = {
-  fever: 'HLH-2004：发热 >38.5℃ 持续 7 天是诊断条目之一；持续发热是 MAS 最早出现的信号',
-  ferritin: '2016 PRINTO/ACR/EULAR：铁蛋白 >684 ng/mL 提示 sJIA 合并 MAS',
-  cluster: '2016 PRINTO/ACR/EULAR：铁蛋白 >684 且满足血小板、AST、甘油三酯、纤维蛋白原中任意 2 条',
-  trend: '2023 EULAR/PReS：指标的动态恶化趋势均应考虑早期或亚临床 MAS',
-  taper: '激素减量期是 MAS 高危窗口，需加密监测',
-  redFlag: '2023 EULAR/PReS：出血现象与中枢神经受累是 MAS 监测条目，出现即需紧急评估',
+  fever: '连续发热是需要最早留意的变化；满 7 天要特别注意',
+  ferritin: '铁蛋白高于 684 ng/mL 时需要留意',
+  cluster: '铁蛋白高于 684，并且血小板、谷草转氨酶、甘油三酯、纤维蛋白原里至少还有两项过线',
+  trend: '和上次相比明显变差时，要比只看一次结果更早留意',
+  taper: '激素减量后的两周需要更密地记录',
+  redFlag: '出血或意识改变需要马上就医评估',
 }
 
 export const DISCLAIMER = '本平台为辅助预警工具，不替代专业诊疗判断'

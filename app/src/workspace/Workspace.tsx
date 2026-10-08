@@ -4,13 +4,15 @@ import { isGradedSymptom, readSymptom, symptomValue, symptomChange, symptomDetai
 import AlertTicker from "./AlertTicker";
 import { careTodos } from "./careTodos";
 import { summarizeHistory } from "./historySummary";
+import { benchmarkFields, listedBenchmarks, rateObservation } from "./benchmark";
 import { recordDates } from "./recordDates";
 import Learning from "./Learning";
+import { sections, type LearningSection } from "./learningContent";
 import { DEFAULT_SETTINGS, METRICS, effThreshold } from "../engine/config";
 import { flushSync } from "react-dom";
-import { revealPatient } from "./motion";
+import { revealPatient, revealRows, SKELETON_MS } from "./motion";
 import Calendar from "./Calendar";
-import { useState, useRef, useEffect } from "react";
+import { Fragment, useState, useRef, useEffect } from "react";
 import {
   BookOpen,
   CaretDown,
@@ -28,7 +30,44 @@ import {
   Pill,
   Heartbeat as Activity,
   DotsThree,
+  Eye,
+  EyeSlash,
 } from "@phosphor-icons/react";
+import {
+  Activity as LucideActivity,
+  BatteryLow,
+  Beaker,
+  BedDouble,
+  Bone,
+  Brain,
+  Candy,
+  ClipboardList,
+  DoorOpen,
+  Droplet,
+  Droplets,
+  FlaskConical,
+  FlaskRound,
+  Gauge,
+  Grip,
+  HeartPulse,
+  Mic,
+  NotebookPen,
+  Percent,
+  Pill as LucidePill,
+  Scale,
+  Stethoscope as LucideStethoscope,
+  Syringe,
+  BookOpen as LucideBookOpen,
+  ChartLine,
+  Heart as LucideHeart,
+  House as LucideHouse,
+  Notebook as LucideNotebook,
+  TestTube,
+  Thermometer,
+  UtensilsCrossed,
+  Waypoints,
+  type LucideIcon,
+} from "lucide-react";
 import {
   LineChart,
   Line,
@@ -57,6 +96,7 @@ import {
 } from "./model";
 import type {
   Actor,
+  BenchmarkLine,
   CareEvent,
   CarePlan,
   Database,
@@ -70,7 +110,7 @@ import "./workspace.css";
 import "./trendDensity.css";
 type Tab = "首页" | "记录" | "趋势" | "照护" | "学习";
 type ModalState = {
-  type: "new" | "monitor" | "observation" | "event" | "plan" | "metric";
+  type: "new" | "monitor" | "observation" | "event" | "plan" | "metric" | "profile";
   monitor?: Monitor;
   observation?: Observation;
   event?: CareEvent;
@@ -89,6 +129,17 @@ function read<T>(key: string, fallback: T): T {
 function stamp(s: string) {
   return s.replace("T", " · ") + (s.length === 10 ? " · 时间未记录" : "");
 }
+/* Time-only variant for day groups, where the date already heads the group. */
+function stampTime(s: string) {
+  return s.length === 10 ? "时间未记录" : s.slice(11);
+}
+const cnDigit = "零一二三四五六七八九";
+function cnCount(n: number) {
+  if (n < 10) return cnDigit[n];
+  if (n === 10) return "十";
+  if (n < 20) return "十" + cnDigit[n % 10];
+  return cnDigit[Math.floor(n / 10)] + "十" + (n % 10 ? cnDigit[n % 10] : "");
+}
 function latest(p: Patient, id: string) {
   return p.observations
     .filter((o) => o.metric === id)
@@ -100,6 +151,13 @@ const icons = {
   趋势: ChartLineUp,
   照护: Heart,
   学习: BookOpen,
+};
+const pageMarks: Record<Tab, LucideIcon> = {
+  首页: LucideHouse,
+  记录: LucideNotebook,
+  趋势: ChartLine,
+  照护: LucideHeart,
+  学习: LucideBookOpen,
 };
 export default function Workspace() {
   const [initial] = useState(() => {
@@ -120,6 +178,7 @@ export default function Workspace() {
     () => read<Role | null>("nuanshao:demo-session-v1", null) === "doctor",
   );
   const [tab, setTab] = useState<Tab>("首页");
+  const [learnSection, setLearnSection] = useState<LearningSection>("知识卡片");
   const [modal, setModal] = useState<ModalState | null>(null);
   const [error, setError] = useState(initial.error);
   const [notice, setNotice] = useState("");
@@ -134,6 +193,13 @@ export default function Workspace() {
   const [logoutTarget, setLogoutTarget] = useState<Role | "choose" | null>(
     null,
   );
+  const [profileHidden, setProfileHidden] = useState<Record<string, boolean>>(
+    () => read("nuanshao:profile-hidden", {}),
+  );
+  const [shell, setShell] = useState(false);
+  const shellTimer = useRef(0);
+  const shellGen = useRef(0);
+  useEffect(() => () => window.clearTimeout(shellTimer.current), []);
   const actor = role ? actorFor(role) : null;
   if (!db)
     return (
@@ -319,6 +385,16 @@ export default function Workspace() {
   const patients = allowedPatients(db, actor);
   const patient = patients.find((p) => p.id === patientId) || patients[0];
   const readonly = role === "doctor";
+  const bodyHidden = !!profileHidden[patient.id];
+  const toggleBody = () => {
+    const next = { ...profileHidden, [patient.id]: !bodyHidden };
+    setProfileHidden(next);
+    try {
+      localStorage.setItem("nuanshao:profile-hidden", JSON.stringify(next));
+    } catch {
+      /* hide preference is optional */
+    }
+  };
   const todos = careTodos(patient, db.metrics);
   const update = (fn: (p: Patient) => void, extra?: (d: Database) => void) => {
     const next = mutatePatient(db, actor, patient.id, fn);
@@ -335,6 +411,8 @@ export default function Workspace() {
     }
   };
   const switchPatient = (id: string, source: HTMLButtonElement) => {
+    window.clearTimeout(shellTimer.current);
+    shellGen.current += 1;
     const origin = source.getBoundingClientRect();
     flushSync(() => {
       setTodoOpen(false);
@@ -343,9 +421,34 @@ export default function Workspace() {
       setModal(null);
       setTab("首页");
       setShowList(false);
+      setShell(false);
       setNotice("");
     });
     revealPatient(origin);
+  };
+  const openTab = (next: Tab) => {
+    if (next === tab && !showList) return;
+    window.clearTimeout(shellTimer.current);
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      shellGen.current += 1;
+      flushSync(() => {
+        setTab(next);
+        setShowList(false);
+        setShell(false);
+      });
+      return;
+    }
+    const gen = ++shellGen.current;
+    flushSync(() => {
+      setTab(next);
+      setShowList(false);
+      setShell(true);
+    });
+    shellTimer.current = window.setTimeout(() => {
+      if (shellGen.current !== gen) return;
+      flushSync(() => setShell(false));
+      revealRows();
+    }, SKELETON_MS);
   };
   const patientList = (
     <div className="patient-list">
@@ -500,17 +603,34 @@ export default function Workspace() {
           {(Object.keys(icons) as Tab[]).map((t) => {
             const Icon = icons[t];
             return (
-              <button
-                key={t}
-                className={tab === t ? "active" : ""}
-                onClick={() => {
-                  setTab(t);
-                  setShowList(false);
-                }}
-              >
-                <Icon size={22} />
-                {readonly && t === "首页" ? "概览" : t}
-              </button>
+              <Fragment key={t}>
+                <button
+                  className={tab === t ? "active" : ""}
+                  onClick={(e) => openTab(t, e.currentTarget)}
+                >
+                  <Icon size={22} />
+                  {readonly && t === "首页" ? "概览" : t}
+                </button>
+                {t === "学习" && tab === "学习" && (
+                  <div className="sub-nav" role="group" aria-label="学习栏目">
+                    {sections.map((s) => (
+                      <button
+                        key={s}
+                        className={
+                          tab === "学习" && learnSection === s ? "active" : ""
+                        }
+                        onClick={(e) => {
+                          setLearnSection(s);
+                          if (tab !== "学习" || showList)
+                            openTab("学习", e.currentTarget);
+                        }}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Fragment>
             );
           })}
           {!readonly && (
@@ -553,7 +673,15 @@ export default function Workspace() {
         {showList ? (
           patientList
         ) : (
-          <div className="patient-content" key={patient.id + "-" + actor.role}>
+          <div
+            className="patient-content"
+            key={patient.id + "-" + actor.role}
+            aria-busy={shell || undefined}
+          >
+            {shell ? (
+              <PageSkeleton tab={tab} />
+            ) : (
+              <>
             <div className="page-heading">
               <div>
                 <h1>
@@ -565,9 +693,9 @@ export default function Workspace() {
                         ? patient.name
                         : tab}
                 </h1>
-                <span>
+                <span className={tab === "学习" ? "learning-slogan" : undefined}>
                   {tab === "学习"
-                    ? "知识卡片 · 问答练习 · 术语猜词"
+                    ? "更懂患者，才能够更好地照顾患者"
                     : patient.description}{" "}
                   {readonly && tab !== "学习" && (
                     <b className="readonly">只读</b>
@@ -575,19 +703,25 @@ export default function Workspace() {
                 </span>
               </div>
               <div className="date-mark">
-                <strong>{new Date().getDate()}</strong>
                 <span>
-                  {new Date().getMonth() + 1}月 ·{" "}
-                  {
+                  {`${
                     ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][
                       new Date().getDay()
                     ]
-                  }
+                  }，${cnCount(new Date().getMonth() + 1)}月${cnCount(new Date().getDate())}`}
                 </span>
               </div>
             </div>
             {tab === "首页" && (
               <>
+                <ProfileBar
+                  patient={patient}
+                  metrics={db.metrics}
+                  hidden={bodyHidden}
+                  readonly={readonly}
+                  onToggle={toggleBody}
+                  onEdit={() => setModal({ type: "profile" })}
+                />
                 <div className="status-strip" aria-label="档案摘要">
                   <span>
                     <strong>
@@ -657,13 +791,16 @@ export default function Workspace() {
                         </div>
                         <button
                           className={index === 0 ? "primary" : "text-button"}
-                          onClick={() => {
+                          onClick={(e) => {
                             if (readonly) {
-                              setTab(todo.kind === "plan" ? "照护" : "记录");
+                              openTab(
+                                todo.kind === "plan" ? "照护" : "记录",
+                                e.currentTarget,
+                              );
                               return;
                             }
                             if (todo.kind === "plan") {
-                              setTab("照护");
+                              openTab("照护", e.currentTarget);
                               return;
                             }
                             const monitor = patient.monitors.find(
@@ -751,7 +888,7 @@ export default function Workspace() {
                   <section className="panel">
                     <div className="section-head">
                       <h2>今日照护</h2>
-                      <button onClick={() => setTab("照护")}>
+                      <button onClick={(e) => openTab("照护", e.currentTarget)}>
                         查看全部 <ArrowUpRight />
                       </button>
                     </div>
@@ -769,7 +906,7 @@ export default function Workspace() {
                   <section className="panel">
                     <div className="section-head">
                       <h2>最近事件</h2>
-                      <button onClick={() => setTab("记录")}>
+                      <button onClick={(e) => openTab("记录", e.currentTarget)}>
                         时间线 <ArrowUpRight />
                       </button>
                     </div>
@@ -812,7 +949,14 @@ export default function Workspace() {
                 }
               />
             )}
-            {tab === "学习" && <Learning key={actor.role} role={actor.role} />}
+            {tab === "学习" && (
+              <Learning
+                key={actor.role}
+                role={actor.role}
+                section={learnSection}
+                onSectionChange={setLearnSection}
+              />
+            )}
             {tab === "照护" && (
               <section className="panel">
                 <div className="section-head">
@@ -842,6 +986,8 @@ export default function Workspace() {
                 />
               </section>
             )}
+              </>
+            )}
           </div>
         )}
         <footer>
@@ -849,6 +995,14 @@ export default function Workspace() {
           <br />
           本平台为辅助记录与预警工具，不替代专业诊疗判断
         </footer>
+        {(() => {
+          const Mark = pageMarks[tab];
+          return (
+            <div className="page-mark" aria-hidden="true">
+              <Mark size={320} strokeWidth={1.25} />
+            </div>
+          );
+        })()}
       </main>
       <nav className="mobile-nav">
         {[
@@ -872,10 +1026,7 @@ export default function Workspace() {
             <button
               key={t}
               className={tab === t ? "active" : ""}
-              onClick={() => {
-                setTab(t as Tab);
-                setShowList(false);
-              }}
+              onClick={(e) => openTab(t as Tab, e.currentTarget)}
             >
               {(() => {
                 const Icon = icons[t as Tab];
@@ -926,6 +1077,7 @@ export default function Workspace() {
               event: modal.event ? "修改事件" : "记录一次事件",
               plan: "照护计划",
               metric: modal.metric?.name || "指标详情",
+              profile: "身体资料与基准",
             }[modal.type]
           }
           onClose={() => setModal(null)}
@@ -948,8 +1100,141 @@ export default function Workspace() {
     </div>
   );
 }
+function readMeasure(raw: string, label: string) {
+  const t = raw.trim();
+  if (!t) return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n <= 0) throw Error(`${label}须为正数`);
+  return n;
+}
+function readBound(raw: string, label: string) {
+  const t = raw.trim();
+  if (!t) return undefined;
+  const n = Number(t);
+  if (!Number.isFinite(n)) throw Error(`${label}须为数字`);
+  return n;
+}
 function Empty({ text }: { text: string }) {
   return <p className="empty">{text}</p>;
+}
+function ProfileBar({
+  patient,
+  metrics,
+  hidden,
+  readonly,
+  onToggle,
+  onEdit,
+}: {
+  patient: Patient;
+  metrics: Metric[];
+  hidden: boolean;
+  readonly: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [menuOpen]);
+  useEffect(() => {
+    if (readonly || hidden) setMenuOpen(false);
+  }, [readonly, hidden]);
+  const sex = patient.profile.sex || "性别未填";
+  const measures = [
+    patient.profile.heightCm != null
+      ? `${patient.profile.heightCm} cm`
+      : "身高未填",
+    patient.profile.weightKg != null
+      ? `${patient.profile.weightKg} kg`
+      : "体重未填",
+  ].join(" · ");
+  const editable = !readonly && !hidden;
+  const lines = listedBenchmarks(patient, metrics);
+  return (
+    <div className="profile-bar">
+      <p>
+        {!hidden && <span className="profile-prefix">{sex} ·</span>}
+        <span
+          className={"profile-facts" + (menuOpen ? " menu-open" : "")}
+          role={editable ? "button" : undefined}
+          tabIndex={editable ? 0 : undefined}
+          aria-haspopup={editable ? "menu" : undefined}
+          aria-expanded={editable ? menuOpen : undefined}
+          aria-label={editable ? `身高体重 ${measures}` : undefined}
+          onClick={editable ? () => setMenuOpen((open) => !open) : undefined}
+          onKeyDown={
+            editable
+              ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setMenuOpen((open) => !open);
+                  }
+                }
+              : undefined
+          }
+        >
+          {hidden ? "已隐藏" : measures}
+          {menuOpen && editable && (
+            <>
+              <span
+                className="pill-menu-backdrop"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                }}
+              />
+              <span className="pill-menu" role="menu" aria-label="身高体重">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpen(false);
+                    onEdit();
+                  }}
+                >
+                  修改
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpen(false);
+                  }}
+                >
+                  取消
+                </button>
+              </span>
+            </>
+          )}
+        </span>
+        <button
+          type="button"
+          className="text-button"
+          aria-pressed={hidden}
+          aria-label={hidden ? "显示身高、体重、性别" : "隐藏身高、体重、性别"}
+          onClick={onToggle}
+        >
+          {hidden ? <EyeSlash size={16} /> : <Eye size={16} />}
+        </button>
+      </p>
+      {!!lines.length && (
+        <ul className="benchmark-list" aria-label="当前基准">
+          {lines.map((line) => (
+            <li key={line.id}>
+              {line.name} {line.text}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 function Alerts({ patient }: { patient: Patient }) {
   const alerts = alertsFor(patient);
@@ -1138,6 +1423,81 @@ function Spark({ values }: { values: number[] }) {
     </svg>
   );
 }
+function PageSkeleton({ tab }: { tab: Tab }) {
+  const kind =
+    tab === "首页"
+      ? "home"
+      : tab === "记录"
+        ? "record"
+        : tab === "趋势"
+          ? "trend"
+          : tab === "照护"
+            ? "care"
+            : "learn";
+  return (
+    <div className={"page-skeleton sk-" + kind} aria-hidden="true">
+      <div className="sk-heading">
+        <span className="sk-title" />
+        <span className="sk-date" />
+      </div>
+      {kind === "home" && (
+        <>
+          <span className="sk-profile" />
+          <span className="sk-strip" />
+          <div className="sk-alert">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="sk-row">
+            <span />
+            <span />
+          </div>
+          <div className="sk-row">
+            <span />
+            <span />
+          </div>
+        </>
+      )}
+      {kind === "record" && (
+        <div className="sk-split">
+          <span className="sk-cal" />
+          <span className="sk-list" />
+        </div>
+      )}
+      {kind === "trend" && (
+        <div className="sk-split sk-trend">
+          <span className="sk-filter" />
+          <div className="sk-rail">
+            <span className="sk-cal" />
+            <span className="sk-summary" />
+          </div>
+          <div className="sk-charts">
+            {Array.from({ length: 6 }, (_, i) => (
+              <span className="sk-chart" key={i} />
+            ))}
+          </div>
+        </div>
+      )}
+      {kind === "care" && <span className="sk-list" />}
+      {kind === "learn" && (
+        <>
+          <span className="sk-strip" />
+          <div className="sk-row">
+            <span />
+            <span />
+          </div>
+          <div className="sk-row">
+            <span />
+            <span />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 function MonitorCard({
   monitor: m,
   patient,
@@ -1200,6 +1560,12 @@ function MonitorCard({
           const def = metrics.find((d) => d.id === id);
           if (!def) return null;
           const o = latest(patient, id);
+          const outside =
+            !!o &&
+            (rateObservation(patient, o, def.unit)?.exceeded ||
+              (isGradedSymptom(id)
+                ? (o.symptom?.severity ?? (o.value === "是" ? 1 : 0)) > 0
+                : def.type === "boolean" && o.value === "是"));
           const values = patient.observations
             .filter(
               (o) =>
@@ -1210,7 +1576,7 @@ function MonitorCard({
             .map((o) => Number(o.value));
           return (
             <button
-              className="metric-tile"
+              className={"metric-tile" + (outside ? " is-outside" : "")}
               key={id}
               onClick={() => onMetric(def)}
             >
@@ -1263,11 +1629,53 @@ function MonitorCard({
     </section>
   );
 }
-function EventRow({ event: e }: { event: CareEvent }) {
+/* Data icons for metrics and events (Lucide). No emoji anywhere in the UI. */
+const METRIC_ICONS: Record<string, LucideIcon> = {
+  temp: Thermometer,
+  ferritin: TestTube,
+  platelet: Droplets,
+  fibrinogen: Waypoints,
+  ast: FlaskConical,
+  tg: Beaker,
+  ldh: FlaskRound,
+  bp: Gauge,
+  hr: HeartPulse,
+  weight: Scale,
+  glucose: Candy,
+  a1c: Percent,
+  rash: Grip,
+  joint: Bone,
+  fatigue: BatteryLow,
+  throat: Mic,
+  appetite: UtensilsCrossed,
+  bleeding: Droplet,
+  cns: Brain,
+};
+const metricIcon = (id: string): LucideIcon =>
+  METRIC_ICONS[id] ?? LucideActivity;
+const EVENT_ICONS: Record<string, LucideIcon> = {
+  服药: LucidePill,
+  打针: Syringe,
+  输液: Droplets,
+  住院: BedDouble,
+  出院: DoorOpen,
+  复诊: LucideStethoscope,
+  调药: NotebookPen,
+};
+const eventIcon = (type: string): LucideIcon =>
+  EVENT_ICONS[type] ?? ClipboardList;
+function EventRow({
+  event: e,
+  hideDate = false,
+}: {
+  event: CareEvent;
+  hideDate?: boolean;
+}) {
+  const Icon = eventIcon(e.type);
   return (
     <div className="event-row">
       <span className="event-icon">
-        <Pill size={19} />
+        <Icon size={19} />
       </span>
       <div>
         <strong>
@@ -1275,7 +1683,7 @@ function EventRow({ event: e }: { event: CareEvent }) {
         </strong>
         <p>{[e.dose + e.unit, e.route, e.note].filter(Boolean).join(" · ")}</p>
         <small>
-          {stamp(e.at)} · {e.author}
+          {(hideDate ? stampTime(e.at) : stamp(e.at))} · {e.author}
         </small>
         <small>
           {e.hospital}
@@ -1382,6 +1790,16 @@ function History({
     }
   };
   const graphScale = Math.min(100, Math.max(0, Number(view.graphScale) || 0));
+  /* One tap anywhere on a pill opens its action menu; only one menu at a time. */
+  const [pillMenu, setPillMenu] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pillMenu) return;
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPillMenu(null);
+    };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [pillMenu]);
   const [start, end] = periodRange(view.date, view.period);
   const monitor = p.monitors.find((m) => m.id === view.monitor);
   const ids = monitor
@@ -1428,54 +1846,132 @@ function History({
     })),
   ].sort((a, b) => b.at.localeCompare(a.at));
   const summary = summarizeHistory(p, shownObservations, shownEvents, metrics);
-  const dates = [...new Set(rows.map((row) => row.at.slice(0, 10)))];
-  const renderRow = (row: (typeof rows)[number]) => (
-    <div
-      className={
-        "timeline-item " + (row.event ? "event-record" : "observation-record")
-      }
-      key={row.id}
-    >
-      {row.event ? (
-        <EventRow event={row.event} />
-      ) : (
-        <div>
-          <strong>
-            {metrics.find((m) => m.id === row.observation!.metric)?.name}{" "}
-            <b>{symptomValue(row.observation!)}</b>{" "}
-            {metrics.find((m) => m.id === row.observation!.metric)?.unit}
-          </strong>
-          <p>
-            {stamp(row.at)} · {row.observation!.context}
-          </p>
-          {isGradedSymptom(row.observation!.metric) && <p>{symptomChange(row.observation!, p.observations)} · {symptomDetail(row.observation!)}</p>}
-          <small>
-            {row.observation!.source} · {row.observation!.author}
-          </small>
-        </div>
-      )}
-      {!readonly && (
-        <div className="row-actions">
-          <button
-            onClick={() =>
-              row.event
-                ? onEditEvent(row.event)
-                : onEditObservation(row.observation!)
-            }
-          >
-            修改
-          </button>
-          <button
-            onClick={() =>
-              onDelete(row.event ? "event" : "observation", row.id)
-            }
-          >
-            删除
-          </button>
-        </div>
-      )}
-    </div>
+  const dates = [...new Set(rows.map((row) => row.at.slice(0, 10)))].sort((a, b) =>
+    b.localeCompare(a),
   );
+  const renderRow = (row: (typeof rows)[number], hideDate = false, i = 0) => {
+    if (row.event) {
+      return (
+        <div
+          className="timeline-item event-record"
+          key={row.id}
+          style={{ "--i": i } as React.CSSProperties}
+        >
+          <EventRow event={row.event} hideDate={hideDate} />
+          {!readonly && (
+            <div className="row-actions">
+              <button onClick={() => onEditEvent(row.event!)}>修改</button>
+              <button onClick={() => onDelete("event", row.id)}>删除</button>
+            </div>
+          )}
+        </div>
+      );
+    }
+    const o = row.observation!;
+    const def = metrics.find((m) => m.id === o.metric);
+    const hit = rateObservation(p, o, def?.unit ?? "");
+    const Icon = metricIcon(o.metric);
+    const meta = [
+      hideDate ? stampTime(row.at) : stamp(row.at),
+      o.context,
+      o.source,
+      o.author,
+      ...(isGradedSymptom(o.metric)
+        ? [symptomChange(o, p.observations), symptomDetail(o)]
+        : []),
+    ]
+      .filter(Boolean)
+      .concat(hit?.exceeded ? [hit.note] : [])
+      .join(" · ");
+    const menuOpen = pillMenu === row.id;
+    return (
+      <div
+        className={
+          "metric-pill" +
+          (hit?.exceeded ? " is-outside" : "") +
+          (menuOpen ? " menu-open" : "")
+        }
+        key={row.id}
+        style={{ "--i": i } as React.CSSProperties}
+        role={!readonly ? "button" : undefined}
+        tabIndex={!readonly ? 0 : undefined}
+        aria-haspopup={!readonly ? "menu" : undefined}
+        aria-expanded={!readonly ? menuOpen : undefined}
+        onClick={
+          !readonly ? () => setPillMenu(menuOpen ? null : row.id) : undefined
+        }
+        onKeyDown={
+          !readonly
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setPillMenu(menuOpen ? null : row.id);
+                }
+              }
+            : undefined
+        }
+      >
+        <span className="metric-pill-label">
+          <Icon size={15} strokeWidth={2.2} />
+          {def?.name}
+        </span>
+        <span className="metric-pill-body">
+          <strong>
+            <b>{symptomValue(o)}</b>
+            {def?.unit ? ` ${def.unit}` : ""}
+          </strong>
+          <small title={meta}>{meta}</small>
+        </span>
+        {menuOpen && !readonly && (
+          <>
+            <span
+              className="pill-menu-backdrop"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPillMenu(null);
+              }}
+            />
+            <span
+              className="pill-menu"
+              role="menu"
+              aria-label={`${def?.name ?? "记录"} 操作`}
+            >
+              <button
+                role="menuitem"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPillMenu(null);
+                  onEditObservation(o);
+                }}
+              >
+                更改
+              </button>
+              <button
+                role="menuitem"
+                className="danger"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPillMenu(null);
+                  onDelete("observation", row.id);
+                }}
+              >
+                删除
+              </button>
+              <button
+                role="menuitem"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPillMenu(null);
+                }}
+              >
+                取消
+              </button>
+            </span>
+          </>
+        )}
+      </div>
+    );
+  };
   return (
     <div
       className={
@@ -1758,8 +2254,8 @@ function History({
               <details className="summary-method">
                 <summary>超阈值如何计算？</summary>
                 <p>
-                  仅对当前已启用 sJIA/MAS
-                  监控中、有参考阈值且单位匹配的数值，按当前灵敏度逐项比较；包括高于上限或低于下限。同日多次分别计数，不等于警报次数或诊断。已比较{" "}
+                  按该病人首页里保存的基准逐项比较，高于上限或低于下限都算。sJIA/MAS
+                  观察线会随当前灵敏度缩放。同日多次分别计数，不等于警报次数或诊断。已比较{" "}
                   {summary.assessed} 项，未覆盖{" "}
                   {summary.items - summary.assessed} 项；无可比较项显示“—”。
                 </p>
@@ -1772,8 +2268,12 @@ function History({
           {!rows.length && (
             <Empty text="当前筛选下没有记录，试试其他日期或记录类型。" />
           )}
-          {view.period === "月"
-            ? dates.map((day) => {
+          {view.period === "日" ? (
+            <div className="records-flow">
+              {rows.map((row, i) => renderRow(row, false, i))}
+            </div>
+          ) : (
+            dates.map((day) => {
                 const dayRows = rows.filter((row) => row.at.startsWith(day));
                 const daily = summarizeHistory(
                   p,
@@ -1811,11 +2311,11 @@ function History({
                         <CaretDown size={17} />
                       </div>
                     </summary>
-                    <div>{dayRows.map(renderRow)}</div>
+                    <div className="records-flow">{dayRows.map((row, i) => renderRow(row, true, i))}</div>
                   </details>
                 );
               })
-            : rows.map(renderRow)}
+          )}
         </section>
       )}
     </div>
@@ -2062,6 +2562,58 @@ function Editor({
           p.events.push(item);
         });
       }
+      if (modal.type === "profile") {
+        const sexRaw = v("sex");
+        if (sexRaw !== "" && sexRaw !== "男" && sexRaw !== "女")
+          throw Error("请选择性别");
+        const sex = sexRaw as "" | "男" | "女";
+        const height = readMeasure(v("heightCm"), "身高");
+        const weight = readMeasure(v("weightKg"), "体重");
+        const next = { ...patient.benchmarks };
+        for (const def of benchmarkFields(patient, db.metrics)) {
+          if (def.type === "bp") {
+            const line: BenchmarkLine = {
+              sysLow: readBound(v(def.id + "-sysLow"), "收缩压下限"),
+              sysHigh: readBound(v(def.id + "-sysHigh"), "收缩压上限"),
+              diaLow: readBound(v(def.id + "-diaLow"), "舒张压下限"),
+              diaHigh: readBound(v(def.id + "-diaHigh"), "舒张压上限"),
+            };
+            if (
+              line.sysLow != null &&
+              line.sysHigh != null &&
+              line.sysLow > line.sysHigh
+            )
+              throw Error("收缩压下限不能高于上限");
+            if (
+              line.diaLow != null &&
+              line.diaHigh != null &&
+              line.diaLow > line.diaHigh
+            )
+              throw Error("舒张压下限不能高于上限");
+            if (
+              line.sysLow == null &&
+              line.sysHigh == null &&
+              line.diaLow == null &&
+              line.diaHigh == null
+            )
+              delete next[def.id];
+            else next[def.id] = line;
+          } else {
+            const line: BenchmarkLine = {
+              low: readBound(v(def.id + "-low"), def.name + "下限"),
+              high: readBound(v(def.id + "-high"), def.name + "上限"),
+            };
+            if (line.low != null && line.high != null && line.low > line.high)
+              throw Error(def.name + "下限不能高于上限");
+            if (line.low == null && line.high == null) delete next[def.id];
+            else next[def.id] = line;
+          }
+        }
+        update((p) => {
+          p.profile = { sex, heightCm: height, weightKg: weight };
+          p.benchmarks = next;
+        });
+      }
       if (modal.type === "plan") {
         const item: CarePlan = {
           id: modal.plan?.id || uid(),
@@ -2135,6 +2687,111 @@ function Editor({
       <div className="form-context">
         {patient.name} · {actor.name}录入 · 虚拟数据
       </div>
+      {modal.type === "profile" && (
+        <>
+          <label>
+            性别
+            <select name="sex" defaultValue={patient.profile.sex}>
+              <option value="">未填</option>
+              <option value="男">男</option>
+              <option value="女">女</option>
+            </select>
+          </label>
+          <div className="form-two">
+            <label>
+              身高（cm）
+              <input
+                name="heightCm"
+                type="number"
+                min="1"
+                step="any"
+                defaultValue={patient.profile.heightCm ?? ""}
+              />
+            </label>
+            <label>
+              体重（kg）
+              <input
+                name="weightKg"
+                type="number"
+                min="1"
+                step="any"
+                defaultValue={patient.profile.weightKg ?? ""}
+              />
+            </label>
+          </div>
+          <fieldset>
+            <legend>基准</legend>
+            {benchmarkFields(patient, db.metrics).map((def) => {
+              const line = patient.benchmarks[def.id] ?? {};
+              return def.type === "bp" ? (
+                <div key={def.id}>
+                  <div className="form-two">
+                    <label>
+                      收缩压下限
+                      <input
+                        name={def.id + "-sysLow"}
+                        type="number"
+                        step="any"
+                        defaultValue={line.sysLow ?? ""}
+                      />
+                    </label>
+                    <label>
+                      收缩压上限
+                      <input
+                        name={def.id + "-sysHigh"}
+                        type="number"
+                        step="any"
+                        defaultValue={line.sysHigh ?? ""}
+                      />
+                    </label>
+                  </div>
+                  <div className="form-two">
+                    <label>
+                      舒张压下限
+                      <input
+                        name={def.id + "-diaLow"}
+                        type="number"
+                        step="any"
+                        defaultValue={line.diaLow ?? ""}
+                      />
+                    </label>
+                    <label>
+                      舒张压上限
+                      <input
+                        name={def.id + "-diaHigh"}
+                        type="number"
+                        step="any"
+                        defaultValue={line.diaHigh ?? ""}
+                      />
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                <div className="form-two" key={def.id}>
+                  <label>
+                    {def.name}下限{def.unit ? `（${def.unit}）` : ""}
+                    <input
+                      name={def.id + "-low"}
+                      type="number"
+                      step="any"
+                      defaultValue={line.low ?? ""}
+                    />
+                  </label>
+                  <label>
+                    {def.name}上限{def.unit ? `（${def.unit}）` : ""}
+                    <input
+                      name={def.id + "-high"}
+                      type="number"
+                      step="any"
+                      defaultValue={line.high ?? ""}
+                    />
+                  </label>
+                </div>
+              );
+            })}
+          </fieldset>
+        </>
+      )}
       {modal.type === "monitor" && (
         <>
           <label>
@@ -2515,7 +3172,7 @@ function Editor({
         </p>
       )}
       <button className="primary submit" type="submit">
-        保存{modal.type === "monitor" ? "监控" : "记录"}{" "}
+        保存{modal.type === "monitor" ? "监控" : modal.type === "profile" ? "资料" : "记录"}{" "}
         <ArrowRight size={18} />
       </button>
     </form>

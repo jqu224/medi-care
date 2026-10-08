@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, METRICS, effThreshold } from "../engine/config";
+import { rateObservation } from "./benchmark";
 import type { CareEvent, Metric, Observation, Patient } from "./model";
 export function summarizeHistory(
   patient: Patient,
@@ -6,35 +6,13 @@ export function summarizeHistory(
   events: CareEvent[],
   metrics: Metric[],
 ) {
-  const keys = new Set(
-    patient.monitors
-      .filter((m) => m.active && ["sjia", "mas"].includes(m.preset))
-      .flatMap((m) => m.metrics),
-  );
-  const settings = patient.settings ?? DEFAULT_SETTINGS;
   const evaluated = observations.flatMap((o) => {
-    const rule = METRICS.find((m) => m.key === o.metric);
-    const definition = metrics.find((m) => m.id === o.metric);
-    if (
-      !keys.has(o.metric) ||
-      !rule ||
-      rule.threshold === undefined ||
-      !settings.weights[rule.key] ||
-      definition?.unit !== rule.unit ||
-      o.value.trim() === "" ||
-      !Number.isFinite(Number(o.value))
-    )
-      return [];
-    const threshold = effThreshold(rule.threshold, settings.sensitivity);
-    return [
-      {
-        id: o.id,
-        exceeded:
-          rule.direction === "high"
-            ? Number(o.value) > threshold
-            : Number(o.value) < threshold,
-      },
-    ];
+    const hit = rateObservation(
+      patient,
+      o,
+      metrics.find((m) => m.id === o.metric)?.unit ?? "",
+    );
+    return hit ? [{ id: o.id, exceeded: hit.exceeded }] : [];
   });
   const sessions = new Set(
     observations.map((o) => `${o.at.slice(0, 10)}:${o.group || o.id}`),

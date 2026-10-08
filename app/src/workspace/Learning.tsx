@@ -1,141 +1,52 @@
 import { useState } from "react";
-import { ArrowRight, BookOpen, Check, Lightbulb } from "@phosphor-icons/react";
+import {
+  ArrowRight,
+  Check,
+  Lightbulb,
+  Shuffle,
+} from "@phosphor-icons/react";
 import type { Role } from "./model";
+import {
+  sections,
+  topics,
+  cards,
+  quizSets,
+  words,
+  type LearningSection,
+} from "./learningContent";
 
-const sources = {
-  ferritin: {
-    name: "MedlinePlus · 铁蛋白检测",
-    url: "https://medlineplus.gov/lab-tests/ferritin-blood-test/",
-  },
-  a1c: { name: "MedlinePlus · A1C", url: "https://medlineplus.gov/a1c.html" },
-  jia: {
-    name: "NIAMS · JIA 知识",
-    url: "https://www.niams.nih.gov/health-topics/juvenile-arthritis",
-  },
-  mas: {
-    name: "NIAMS · JIA 研究与资源",
-    url: "https://www.niams.nih.gov/health-topics/juvenile-arthritis/more-info",
-  },
-};
-const cards = [
-  {
-    id: "ferritin",
-    topic: "检验知识",
-    title: "Ferritin 是什么？",
-    text: "Ferritin 是铁蛋白。铁蛋白检测帮助了解体内铁储存；结果也可能受到炎症等因素影响，不能用一个数值单独判断疾病。",
-    takeaway: "读报告时，同时保留单位、日期和报告来源。",
-    source: sources.ferritin,
-  },
-  {
-    id: "a1c",
-    topic: "糖尿病",
-    title: "HbA1c 与当天血糖不同",
-    text: "HbA1c（糖化血红蛋白）反映约过去三个月的平均血糖水平，不是某一餐之后的即时血糖。",
-    takeaway: "记录血糖时注明空腹、餐后或随机背景。",
-    source: sources.a1c,
-  },
-  {
-    id: "jia",
-    topic: "sJIA / MAS",
-    title: "先认识 JIA 这个名字",
-    text: "JIA 是 juvenile idiopathic arthritis，即幼年特发性关节炎。sJIA 是其中的全身型，症状可涉及关节以外的部位。",
-    takeaway: "把症状发生的时间与变化记录下来，方便复诊沟通。",
-    source: sources.jia,
-  },
-  {
-    id: "mas",
-    topic: "sJIA / MAS",
-    title: "为什么要关注变化？",
-    text: "MAS（巨噬细胞活化综合征）是 sJIA 的一种少见但危险的并发症。学习术语有助于沟通，判断是否发生仍需要医疗团队评估。",
-    takeaway: "应用提醒是沟通线索，不是自行确诊或调药的依据。",
-    source: sources.mas,
-  },
-  {
-    id: "record",
-    topic: "照护记录",
-    title: "计划与实际发生，要分开记",
-    text: "“计划今晚服药”和“今晚已经服药”是两件事。本应用用照护计划保存安排，用事件记录实际发生的治疗。",
-    takeaway: "记录事件时写清时间；住院标签只描述这一次事件。",
-    source: null,
-  },
-  {
-    id: "risk",
-    topic: "照护记录",
-    title: "没有提醒，就一定安全吗？",
-    text: "本应用的规则只覆盖部分场景。“未触发提醒”“未启用风险评估”和“没有数据”含义不同，不能互相替代。",
-    takeaway: "就诊时带上原始报告和变化记录，不只看颜色。",
-    source: null,
-  },
-];
-const questions = [
-  {
-    id: "q1",
-    question: "HbA1c 主要反映什么？",
-    options: ["某一餐后的血糖", "约过去三个月的平均血糖", "当天最高体温"],
-    answer: 1,
-    explanation: "HbA1c 帮助了解一段时间的平均血糖，不等于即时血糖。",
-    source: sources.a1c,
-  },
-  {
-    id: "q2",
-    question: "Ferritin 的中文名称是什么？",
-    options: ["血小板", "血糖", "铁蛋白"],
-    answer: 2,
-    explanation:
-      "Ferritin 指铁蛋白，检测有助于了解铁储存，结果需要结合背景解读。",
-    source: sources.ferritin,
-  },
-  {
-    id: "q3",
-    question: "计划今天服药，就等于已经服药吗？",
-    options: [
-      "不等于，应另记实际服药事件",
-      "等于，可以自动当作已服药",
-      "只要有计划就不用记录",
-    ],
-    answer: 0,
-    explanation: "计划是安排，事件是实际发生。两者分开能减少照护沟通误差。",
-    source: null,
-  },
-  {
-    id: "q4",
-    question: "应用显示“未启用风险评估”，应该怎样理解？",
-    options: ["已经确认安全", "没有任何疾病", "当前只提供记录和趋势"],
-    answer: 2,
-    explanation: "没有启用规则不代表正常，也不能替代医生评估。",
-    source: null,
-  },
-  {
-    id: "q5",
-    question: "记录血糖时，哪个信息有助于区分测量背景？",
-    options: ["手机电量", "空腹、餐后或随机", "当天应用打开次数"],
-    answer: 1,
-    explanation: "本应用按测量背景区分血糖趋势，避免混合比较。",
-    source: null,
-  },
-];
-const words = [
-  {
-    word: "FERRITIN",
-    meaning: "铁蛋白",
-    hint: "以 F 开头，报告中常见的检验术语。",
-  },
-  {
-    word: "GLUCOSE",
-    meaning: "葡萄糖",
-    hint: "以 G 开头，blood glucose 指血糖。",
-  },
-  {
-    word: "SYMPTOM",
-    meaning: "症状",
-    hint: "以 S 开头，用来描述身体出现的变化。",
-  },
-  { word: "DOSE", meaning: "剂量", hint: "四个字母，以 D 开头。" },
-  { word: "THERAPY", meaning: "治疗", hint: "以 T 开头，七个字母。" },
-];
 type Progress = { read: string[]; correct: string[]; words: string[] };
 const empty: Progress = { read: [], correct: [], words: [] };
-export default function Learning({ role }: { role: Role }) {
+const ASK_ENDPOINT =
+  "https://zion-app.functorz.com/zero/DqQnbOV5vvJ/api/graphql-v2";
+const ASK_FLOW_ID = "a60f19aa-6500-4de9-a5e9-dd1c9322d5bd";
+
+async function askConcept(question: string): Promise<string> {
+  const response = await fetch(ASK_ENDPOINT, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      query:
+        "mutation ($args: Json!) { fz_invoke_action_flow(actionFlowId: " +
+        JSON.stringify(ASK_FLOW_ID) +
+        ", versionId: 1, args: $args) }",
+      variables: { args: { question } },
+    }),
+  });
+  const body = await response.json();
+  const answer = body?.data?.fz_invoke_action_flow;
+  if (typeof answer === "string" && answer.trim()) return answer;
+  throw new Error("empty");
+}
+export default function Learning({
+  role,
+  section,
+  onSectionChange,
+}: {
+  role: Role;
+  section: LearningSection;
+  onSectionChange: (s: LearningSection) => void;
+}) {
   const storageKey = `nuanshao:learning:v1:${role}`;
   const [progress, setProgress] = useState<Progress>(() => {
     try {
@@ -150,8 +61,10 @@ export default function Learning({ role }: { role: Role }) {
       return empty;
     }
   });
-  const [section, setSection] = useState("知识卡片");
   const [topic, setTopic] = useState("全部");
+  const [setIndex, setSetIndex] = useState(
+    () => Math.floor(Math.random() * quizSets.length),
+  );
   const [question, setQuestion] = useState(0);
   const [choice, setChoice] = useState<number | null>(null);
   const [wordIndex, setWordIndex] = useState(0);
@@ -159,6 +72,10 @@ export default function Learning({ role }: { role: Role }) {
   const [hint, setHint] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [askText, setAskText] = useState("");
+  const [askAnswer, setAskAnswer] = useState("");
+  const [askError, setAskError] = useState("");
+  const [askPending, setAskPending] = useState(false);
   const save = (kind: keyof Progress, id: string) => {
     const next = { ...progress, [kind]: [...new Set([...progress[kind], id])] };
     setProgress(next);
@@ -169,7 +86,18 @@ export default function Learning({ role }: { role: Role }) {
       setSaveError("学习进度暂未保存，当前练习可继续。");
     }
   };
-  const q = questions[question];
+  const totalQuestions = quizSets.reduce((n, s) => n + s.questions.length, 0);
+  const set = quizSets[setIndex];
+  const q = set.questions[question];
+  const drawSet = () => {
+    let next = setIndex;
+    if (quizSets.length > 1)
+      while (next === setIndex)
+        next = Math.floor(Math.random() * quizSets.length);
+    setSetIndex(next);
+    setQuestion(0);
+    setChoice(null);
+  };
   const word = words[wordIndex];
   const solved = [...word.word].every((letter) => letters.includes(letter));
   const guess = (letter: string) => {
@@ -180,13 +108,6 @@ export default function Learning({ role }: { role: Role }) {
   };
   return (
     <section className="learning-page" aria-label="学习中心">
-      <div className="learning-intro">
-        <div>
-          <h2>每天懂一点，照护更从容</h2>
-          <p>认识术语，读懂记录，把疑问带到下一次沟通。</p>
-        </div>
-        <BookOpen size={30} aria-hidden="true" />
-      </div>
       <div className="learning-progress" aria-label="学习进度">
         <span>
           已读{" "}
@@ -197,7 +118,7 @@ export default function Learning({ role }: { role: Role }) {
         <span>
           答对{" "}
           <b>
-            {progress.correct.length}/{questions.length}
+            {progress.correct.length}/{totalQuestions}
           </b>
         </span>
         <span>
@@ -208,11 +129,11 @@ export default function Learning({ role }: { role: Role }) {
         </span>
       </div>
       <div className="learning-tabs" role="group" aria-label="学习方式">
-        {["知识卡片", "问答练习", "术语猜词"].map((s) => (
+        {sections.map((s) => (
           <button
             key={s}
             aria-pressed={section === s}
-            onClick={() => setSection(s)}
+            onClick={() => onSectionChange(s)}
           >
             {s}
           </button>
@@ -238,17 +159,15 @@ export default function Learning({ role }: { role: Role }) {
       {section === "知识卡片" && (
         <>
           <div className="learning-topics" role="group" aria-label="知识主题">
-            {["全部", "sJIA / MAS", "糖尿病", "检验知识", "照护记录"].map(
-              (t) => (
-                <button
-                  key={t}
-                  aria-pressed={topic === t}
-                  onClick={() => setTopic(t)}
-                >
-                  {t}
-                </button>
-              ),
-            )}
+            {["全部", ...topics].map((t) => (
+              <button
+                key={t}
+                aria-pressed={topic === t}
+                onClick={() => setTopic(t)}
+              >
+                {t}
+              </button>
+            ))}
           </div>
           <div className="knowledge-grid">
             {cards
@@ -290,9 +209,37 @@ export default function Learning({ role }: { role: Role }) {
         </>
       )}
       {section === "问答练习" && (
+        <>
         <article className="learning-exercise">
+          <div
+            className="learning-topics quiz-sets"
+            role="group"
+            aria-label="套题选择"
+          >
+            {quizSets.map((s, i) => (
+              <button
+                key={s.id}
+                title={s.title}
+                aria-pressed={i === setIndex}
+                onClick={() => {
+                  setSetIndex(i);
+                  setQuestion(0);
+                  setChoice(null);
+                }}
+              >
+                第 {i + 1} 套
+              </button>
+            ))}
+            <button className="quiz-shuffle" onClick={drawSet}>
+              <Shuffle size={14} />
+              随机抽一套
+            </button>
+          </div>
+          <p className="quiz-set-info">
+            《{set.title}》 {set.description}
+          </p>
           <span className="exercise-position">
-            第 {question + 1} / {questions.length} 题
+            第 {question + 1} / {set.questions.length} 题
           </span>
           <h3>{q.question}</h3>
           <div className="quiz-options">
@@ -337,18 +284,73 @@ export default function Learning({ role }: { role: Role }) {
             <button disabled={choice === null} onClick={() => setChoice(null)}>
               再练一次
             </button>
-            <button
-              className="primary"
-              onClick={() => {
-                setQuestion((question + 1) % questions.length);
-                setChoice(null);
-              }}
-            >
-              {question === questions.length - 1 ? "回到第一题" : "下一题"}
-              <ArrowRight size={18} />
-            </button>
+            {question === set.questions.length - 1 ? (
+              <button className="primary" onClick={drawSet}>
+                再抽一套
+                <Shuffle size={18} />
+              </button>
+            ) : (
+              <button
+                className="primary"
+                onClick={() => {
+                  setQuestion(question + 1);
+                  setChoice(null);
+                }}
+              >
+                下一题
+                <ArrowRight size={18} />
+              </button>
+            )}
           </div>
         </article>
+        <form
+          className="learning-ask"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const question = askText.trim();
+            if (!question || askPending) return;
+            setAskPending(true);
+            setAskError("");
+            setAskAnswer("");
+            askConcept(question).then(
+              (answer) => {
+                setAskAnswer(answer);
+                setAskPending(false);
+              },
+              () => {
+                setAskError("暂时没有回答，请稍后再试。");
+                setAskPending(false);
+              },
+            );
+          }}
+        >
+          <h3>接着问一句</h3>
+          <p>只解释学习中心里的概念。不诊断，也不建议调整药物。</p>
+          <textarea
+            value={askText}
+            maxLength={500}
+            rows={3}
+            placeholder="例如：血氧饱和度是什么？"
+            aria-label="向学习助手提问"
+            onChange={(event) => setAskText(event.target.value)}
+          />
+          <div className="exercise-actions">
+            <button className="primary" disabled={askPending || !askText.trim()}>
+              {askPending ? "正在回答" : "提问"}
+            </button>
+          </div>
+          {askAnswer && (
+            <div className="learning-feedback" role="status">
+              <p>{askAnswer}</p>
+            </div>
+          )}
+          {askError && (
+            <p className="learning-ask-error" role="alert">
+              {askError}
+            </p>
+          )}
+        </form>
+        </>
       )}
       {section === "术语猜词" && (
         <article className="learning-exercise word-exercise">
