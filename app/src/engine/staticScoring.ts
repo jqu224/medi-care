@@ -89,7 +89,6 @@ const PRINTO_PAIR_LABELS = [
 function stateOf(
   value: number | undefined,
   test: (v: number) => boolean,
-  describe: (v: number) => string,
 ): CriterionState {
   if (value === undefined || !Number.isFinite(value)) return "not-measured";
   return test(value) ? "met" : "not-met";
@@ -114,11 +113,10 @@ export function scorePrinto2016(snap: Snapshot): StaticVerdict {
   };
 
   // 前提二：铁蛋白 >684 ng/mL（指南原值，不受灵敏度影响）
-  const ferMet = (s.ferritin ?? -Infinity) > 684;
   const ferCriterion: Criterion = {
     key: "ferritin",
     label: "铁蛋白",
-    state: stateOf(s.ferritin, (v) => v > 684, () => ""),
+    state: stateOf(s.ferritin, (v) => v > 684),
     detail:
       s.ferritin === undefined
         ? "还没有铁蛋白结果"
@@ -132,26 +130,26 @@ export function scorePrinto2016(snap: Snapshot): StaticVerdict {
     let detail: string;
     switch (key) {
       case "platelet":
-        state = stateOf(v, (x) => x < 181, () => "");
+        state = stateOf(v, (x) => x < 181);
         detail =
           v === undefined
             ? "还没有血小板结果"
             : `血小板 ${fmt(v)} ×10⁹/L，标准线 181（低于才算）`;
         break;
       case "ast":
-        state = stateOf(v, (x) => x > 48, () => "");
+        state = stateOf(v, (x) => x > 48);
         detail =
           v === undefined ? "还没有 AST 结果" : `AST ${fmt(v)} U/L，标准线 48（高于才算）`;
         break;
       case "tg":
-        state = stateOf(v, (x) => x > 156, () => "");
+        state = stateOf(v, (x) => x > 156);
         detail =
           v === undefined
             ? "还没有甘油三酯结果"
             : `甘油三酯 ${fmt(v)} mg/dL，标准线 156（高于才算）`;
         break;
       default:
-        state = stateOf(v, (x) => x < 3.6, () => "");
+        state = stateOf(v, (x) => x < 3.6);
         detail =
           v === undefined
             ? "还没有纤维蛋白原结果"
@@ -213,16 +211,13 @@ export function scoreHlh2004(snap: Snapshot): StaticVerdict {
 
   // 甘油三酯在 HLH 里是 mmol/L >3，与主线的 mg/dL 不是同一口径，不能混用
   let tgState: CriterionState;
-  let tgDetail: string;
   if (s.tgMmol !== undefined) {
     tgState = s.tgMmol > 3 ? "met" : "not-met";
-    tgDetail = `甘油三酯 ${fmt(s.tgMmol, 1)} mmol/L，标准线 3`;
   } else {
     tgState = "not-measured";
-    tgDetail = "还没有按 mmol/L 口径的甘油三酯结果（这套标准用的是 mmol/L，不是一般报告的 mg/dL）";
   }
 
-  const fbgState = stateOf(s.fibrinogen, (v) => v < 1.5, () => "");
+  const fbgState = stateOf(s.fibrinogen, (v) => v < 1.5);
   const criteria: Criterion[] = [
     {
       key: "nk",
@@ -328,7 +323,7 @@ export function scoreHlh2004(snap: Snapshot): StaticVerdict {
     {
       key: "ferritin",
       label: "铁蛋白 >500 µg/L",
-      state: stateOf(s.ferritin, (v) => v > 500, () => ""),
+      state: stateOf(s.ferritin, (v) => v > 500),
       detail:
         s.ferritin === undefined
           ? "还没有铁蛋白结果"
@@ -404,7 +399,7 @@ export function scoreMsTable(snap: Snapshot): StaticVerdict {
     {
       key: "platelet",
       label: "血小板计数（系数 −0.003）",
-      state: stateOf(s.platelet, () => true, () => ""),
+      state: stateOf(s.platelet, () => true),
       detail:
         s.platelet === undefined
           ? "还没有血小板结果"
@@ -413,20 +408,20 @@ export function scoreMsTable(snap: Snapshot): StaticVerdict {
     {
       key: "ldh",
       label: "乳酸脱氢酶 LDH（系数 +0.001）",
-      state: stateOf(s.ldh, () => true, () => ""),
+      state: stateOf(s.ldh, () => true),
       detail: s.ldh === undefined ? "还没有 LDH 结果" : `LDH ${fmt(s.ldh)} U/L`,
     },
     {
       key: "fibrinogen",
       label: "纤维蛋白原（系数 −0.004）",
-      state: stateOf(s.fibrinogen, () => true, () => ""),
+      state: stateOf(s.fibrinogen, () => true),
       detail:
         s.fibrinogen === undefined ? "还没有纤维蛋白原结果" : `纤维蛋白原 ${fmt(s.fibrinogen, 1)} g/L`,
     },
     {
       key: "ferritin",
       label: "血清铁蛋白 SF（系数 +0.0001）",
-      state: stateOf(s.ferritin, () => true, () => ""),
+      state: stateOf(s.ferritin, () => true),
       detail: s.ferritin === undefined ? "还没有铁蛋白结果" : `铁蛋白 ${fmt(s.ferritin)} ng/mL`,
     },
   ];
