@@ -701,6 +701,33 @@ test("566f-style medical record extracts inline labs, not narrative noise", () =
   assert.ok(!s.sections.some((sec) => sec.title === "入院情况"));
 });
 
+test("medical-record sections keep multi-line bodies under each heading", () => {
+  const text = `主诉：sJIA复诊
+现病史：无右臀部痛右髋痛右足跟痛晨僵。双颞颌关节偶酸痛。
+现：司库奇尤 150mg ih Q3W
+既往史和其他病史：同前
+阿达木严重皮疹过敏。
+查体：Wt 45.5kg, 右臀部叩痛，右4字+-，髋内旋 (-)，椎体无
+叩痛，颞下颌 (-)
+辅助检查：2024-10-26 WBC 7.28×10⁹/L; PLT 215×10⁹/L
+诊断：幼年特发性关节炎
+处理：1、复查髋关节MRI
+2、司库奇尤 150mg
+医师签名：张三`;
+  const secs = extractNarrativeSections(text);
+  const by = Object.fromEntries(secs.map((s) => [s.title, s.body]));
+  assert.equal(by["主诉"], "sJIA复诊");
+  assert.match(by["现病史"] ?? "", /司库奇尤 150mg/);
+  assert.match(by["既往史和其他病史"] ?? "", /同前/);
+  assert.match(by["既往史和其他病史"] ?? "", /阿达木严重皮疹过敏/);
+  assert.match(by["查体"] ?? "", /Wt 45\.5kg/);
+  assert.match(by["查体"] ?? "", /颞下颌/);
+  assert.match(by["处理"] ?? "", /复查髋关节MRI/);
+  assert.match(by["处理"] ?? "", /司库奇尤 150mg/);
+  assert.ok(!secs.some((s) => s.title === "现"));
+  assert.ok(!secs.some((s) => s.title.includes("医师签名")));
+});
+
 test("md5Base64 matches Node crypto for Zion Content-MD5", async () => {
   const { createHash } = await import("node:crypto");
   const bytes = new TextEncoder().encode("hi");

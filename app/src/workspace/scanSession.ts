@@ -1220,24 +1220,45 @@ export function looksLikeMedicalRecord(text: string): boolean {
   return /主\s*诉|现病史|辅助检查|医师签名|查\s*体|处\s*理/.test(text);
 }
 
+/** 像不像病历栏目名（主诉/现病史…），避免把「现：司库奇尤」当成新一节 */
+function looksLikeSectionHeading(title: string): boolean {
+  if (title.length < 2 || title.length > 16) return false;
+  if (/医师签名|报告人|核对者|第\d+页/.test(title)) return false;
+  if (/^[A-Za-z0-9.\-\s%]+$/.test(title)) return false;
+  if (matchMetricAlias(title) || matchEngAlias(title)) return false;
+  /* 正文里常见的短标签「现：」「另：」不是栏目；带 诉/史/体… 的才算 */
+  if (title.length <= 2 && !/[诉史体检查断理情诊科嘱往]/.test(title))
+    return false;
+  return true;
+}
+
 /**
- * 从病历 OCR 抽动态分节：标题照抄原件「××：」前半，不套固定槽。
- * 正文可能为空（识别不清），留给用户在表单里补。
+ * 从病历 OCR 抽动态分节：标题照抄原件「××：」，不套固定槽。
+ * 同一栏目下多行续写要接到 body（直到下一个栏目名），不能只留标题那一行右边。
  */
 export function extractNarrativeSections(text: string): ScanSection[] {
-  const out: ScanSection[] = [];
-  const re = /^([^\n：:]{2,16})[：:]\s*(.*)$/gm;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
-    const title = m[1]!.trim().replace(/\s+/g, "");
-    const body = m[2]!.trim();
-    if (!title) continue;
-    if (/^[A-Za-z0-9.\-\s%]+$/.test(title)) continue;
-    if (matchMetricAlias(title) || matchEngAlias(title)) continue;
-    if (/医师签名|报告人|核对者|第\d+页/.test(title)) continue;
-    out.push(newSection(title, body));
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const out: { title: string; parts: string[] }[] = [];
+  let cur: { title: string; parts: string[] } | null = null;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    const m = line.match(/^([^\n：:]{1,16})[：:]\s*(.*)$/);
+    const title = m ? m[1]!.trim().replace(/\s+/g, "") : "";
+    const rest = m ? m[2]!.trim() : "";
+    if (m && looksLikeSectionHeading(title)) {
+      cur = { title, parts: rest ? [rest] : [] };
+      out.push(cur);
+      continue;
+    }
+    if (!cur) continue;
+    /* 续行：整行并入上一节（含「现：司库奇尤…」这种短标签行） */
+    cur.parts.push(line);
   }
-  return out.slice(0, 24);
+  return out
+    .map((s) => newSection(s.title, s.parts.join("\n").trim()))
+    .filter((s) => s.title || s.body)
+    .slice(0, 24);
 }
 
 /**

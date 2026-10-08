@@ -59,7 +59,7 @@ docType 只能是其一：lab_table（印刷化验单）| medical_record（门�
 
 lab_table：填 items。items 元素：{"seq":"印刷行号或空","rawName":"中文名","engName":"英文缩写或空","value":"纯数字","unit":"单位","refRange":"报告上的参考区间原文，能见必填","abnormal":"high|low|空"}。双栏化验先左列再右列。value 不带箭头和单位。MPV/PDW 等派生项也要整行提取。sections 必须 []。
 
-medical_record / referral：必须填 sections，禁止返回空数组 []。逐段抄写纸面可见栏目，每项 {"title":"原件栏目名原文","body":"该栏完整正文"}。title 照抄纸面（主诉/入院情况/辅助检查/初步诊断/转往…均可，不要套固定模板）；body 尽量抄全可见文字，只有完全看不清才用空串。叙事不要拆成 items；文内检验另填 items。
+medical_record / referral：必须填 sections，禁止返回空数组 []。逐段抄写纸面可见栏目，每项 {"title":"原件栏目名原文","body":"该栏完整正文"}。title 照抄纸面（主诉/入院情况/辅助检查/初步诊断/转往…均可，不要套固定模板）；body 必须包含该栏目标题下的全部续行（直到下一栏目），不要只抄标题同一行右边的字。叙事不要拆成 items；文内检验另填 items。
 
 handwritten_temp：items 与 sections 必须 []；填 temps，每个时点一行：{"date":"YYYY-MM-DD，只有带圈日号则空并把年月放进 questions","time":"HH:MM","celsius":"纯数字体温","note":"用药备注或空"}。
 
