@@ -3,7 +3,11 @@
 // 出具医院必填：需求方小Q 的原话是「很多地方的医生他是不知道的，他是不了解的」，
 // 「后期涉及到病情恶化，你没有办法转院的问题，地方医疗水平不够」。
 // 「这份单子是哪家医院出的」是这种落差在数据上最直接的证据——它决定了这份
-// 记录在转诊时值多少分量。所以这里做成硬性约束，而不是可选备注。
+// 记录在转诊时值多少分量。所以化验单/病历做成硬性约束。
+//
+// 手写体温单、临床表现照片、服药记录通常没有院名抬头：不要医院，但体温行要能落到日期。
+
+import { normalizeDate, type ScanDocType } from "./scanSession";
 
 export type ScanGate = { ok: true } | { ok: false; message: string };
 
@@ -13,14 +17,40 @@ export const REPORT_DATE_REQUIRED =
 export const HOSPITAL_REQUIRED =
   "请先确认这份报告是哪家医院或机构出具的，这决定了这份数据在就诊、转诊时能不能作为参考";
 
+export const TEMP_DATE_REQUIRED =
+  "请为每条体温补上日期，或填写报告日期作为默认日期";
+
+const NO_HOSPITAL: ScanDocType[] = [
+  "handwritten_temp",
+  "clinical_photo",
+  "medication_log",
+  "prescription",
+  "other",
+];
+
 /**
- * 保存前的硬性校验。日期与医院都是必填——
- * 仅存档（不录入任何数值）的报告同样要求医院，因为可信度来自出处，与录不录数值无关。
+ * 保存前的硬性校验。
+ * - 化验单 / 门诊病历 / 转诊单 / 未分型：日期 + 医院
+ * - 手写体温：不要医院；有体温数值时，行日期或报告日期至少有一个
+ * - 照片 / 服药 / 处方 / 其他：日期与医院均可空（仅存档）
  */
 export function scanSaveGate(session: {
   reportDate?: string;
   hospital?: string;
+  docType?: string;
+  temps?: { date?: string; celsius?: string }[];
 }): ScanGate {
+  const doc = (session.docType ?? "") as ScanDocType;
+  if (doc === "handwritten_temp") {
+    const active = (session.temps ?? []).filter((t) => (t.celsius ?? "").trim());
+    if (!active.length) return { ok: true };
+    for (const t of active) {
+      if (!normalizeDate(t.date ?? "") && !session.reportDate)
+        return { ok: false, message: TEMP_DATE_REQUIRED };
+    }
+    return { ok: true };
+  }
+  if (NO_HOSPITAL.includes(doc)) return { ok: true };
   if (!session.reportDate) return { ok: false, message: REPORT_DATE_REQUIRED };
   if (!session.hospital || !session.hospital.trim())
     return { ok: false, message: HOSPITAL_REQUIRED };

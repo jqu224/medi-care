@@ -16,6 +16,12 @@ coverage/
 .preview/
 app/preview.html
 
+# Local OCR / case-ref audit scaffolding — keep on disk, never ship
+app/scripts/batch-case-ref-scan.mjs
+app/scripts/browser-audit-one.mjs
+app/scripts/upload-one-scan.mjs
+app/scripts/preview-assistant.tsx
+
 # Local agent, MCP, and review artifacts
 .impeccable/
 .shots/
@@ -54,4 +60,6 @@ reference/
 !app/public/*.jpg
 !app/public/*.jpeg
 # PP-OCR models are generated from node_modules by app/scripts/copy-ppocr.mjs
+# (copied as *.wasm under assets/ppocr so Zion static hosting will accept them)
 app/public/ppocr/
+app/public/assets/ppocr/

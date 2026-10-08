@@ -19,16 +19,28 @@ import { scanSaveGate } from "./scanGate";
 import { todayISO } from "../lib/date";
 import {
   NEW_METRIC,
-  SCAN_SOURCE,
+  SCAN_DOC_TYPES,
+  docTypeLabel,
   extractReportDate,
   emptySession,
   findDuplicatePhoto,
   isSimilarScan,
   itemSeqLabels,
+  mergeObservationsBySource,
+  narrativeToSections,
+  newSection,
+  scanObservationSource,
   scanSignature,
+  sessionForDocType,
+  sessionTempsToRows,
   sessionToRows,
+  showsAttachedLabs,
+  usesLabGrid,
+  usesNarrativeForm,
+  type ScanDocType,
   type ScanEngineKind,
   type ScanRecord,
+  type ScanSection,
   type ScanSession,
 } from "./scanSession";
 import {
@@ -39,12 +51,14 @@ import {
 import {
   averageHash,
   deletePhoto,
+  getPhoto,
   photoUrl,
   prepareImage,
   putPhoto,
   sha256Hex,
   type PreparedImage,
 } from "./photoStore";
+import { pushScanToZion, zionMediaFromEnv } from "./zionMedia";
 import type { Actor, Database, Metric, Patient } from "./model";
 import { uid, now } from "./model";
 import {
@@ -82,17 +96,31 @@ export function ScanDialog({
   onSaved: (notice: string) => void;
 }) {
   const aiReady = aiConfigured(ENV);
-  const [stage, setStage] = useState<"pick" | "parsing" | "confirm">(
-    editing ? "confirm" : "pick",
+  const [stage, setStage] = useState<"pick" | "parsing" | "classify" | "enter">(
+    editing ? "enter" : "pick",
   );
   const [prepared, setPrepared] = useState<PreparedImage | null>(null);
+  const [sourceName, setSourceName] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [photoId, setPhotoId] = useState(editing?.photoId ?? "");
   const [engine, setEngine] = useState<ScanEngineKind>(editing?.engine ?? "manual");
   const [note, setNote] = useState("");
-  const [session, setSession] = useState<ScanSession | null>(
-    editing?.session ?? null,
-  );
+  const [session, setSession] = useState<ScanSession | null>(() => {
+    if (!editing?.session) return null;
+    const s = editing.session as ScanSession & { narrative?: Parameters<typeof narrativeToSections>[0] };
+    return {
+      ...s,
+      temps: s.temps ?? [],
+      sections:
+        s.sections?.length
+          ? s.sections
+          : s.narrative
+            ? narrativeToSections(s.narrative)
+            : [],
+    };
+  });
+  /** 病历/转诊：文内指标默认收起，用户打开「顺便录入指标」才展开 */
+  const [includeLabs, setIncludeLabs] = useState(false);
   const [raw, setRaw] = useState("");
   const [followUps, setFollowUps] = useState<
     { assistantJson: string; userAnswer: string }[]
@@ -153,6 +181,7 @@ export function ScanDialog({
     if (!file) return;
     setError("");
     setDup(null);
+    setSourceName(file.name || "");
     try {
       const next = await prepareImage(file);
       setPrepared(next);
@@ -167,7 +196,7 @@ export function ScanDialog({
       setDup(hit);
       if (hit?.kind === "exact")
         setError(
-          `这张照片与已有扫描（${hit.scan.session.reportDate || hit.scan.createdAt.slice(0, 10)}）完全相同，已阻止识别。请先在扫描记录中删除那条，或换一张照片`,
+          `这张照片与已有扫描（${hit.scan.session.reportDate || hit.scan.createdAt.slice(0, 10)}）完全相同，已阻止识别；请先在扫描记录中删除那条，或换一张照片`,
         );
     } catch (e) {
       setError(e instanceof Error ? e.message : "图片读取失败，请换一张重试");
@@ -207,9 +236,9 @@ export function ScanDialog({
       setEngine("manual");
       setNote("");
       setSession(
-        emptySession("照片已保存，请对照左侧原件逐项填写，确认后才会生成检测记录"),
+        emptySession("照片已保存，请先确认材料类型，再对照原件填写"),
       );
-      setStage("confirm");
+      setStage("classify");
       setBusy("");
       return;
     }
@@ -227,7 +256,7 @@ export function ScanDialog({
       setNote("识别过程出现异常，请对照原件手动填写");
       setSession(emptySession("识别没有完成，请对照原件手动填写"));
     }
-    setStage("confirm");
+    setStage("classify");
     setBusy("");
   };
 
@@ -341,7 +370,7 @@ export function ScanDialog({
     if (idx < items.length - 1) reviewGo(idx + 1);
   };
 
-  const save = () => {
+  const save = async () => {
     const s = session!;
     setError("");
     const gate = scanSaveGate(s);
@@ -349,62 +378,90 @@ export function ScanDialog({
       setError(gate.message);
       return;
     }
-    const lookup = (id: string) => {
-      const m = db.metrics.find((x) => x.id === id);
-      return m ? { name: m.name, unit: m.unit } : undefined;
-    };
-    const { rows, error: rowError, blocked } = sessionToRows(s, lookup);
-    if (rowError) {
-      setError(rowError);
-      return;
-    }
-    if (blocked.length) {
-      setError(
-        `以下项目的单位与所选指标不一致，无法换算，已阻止保存：${blocked.join("、")}，请改选「新建自定义指标」或「不录入（仅存档）」`,
-      );
-      return;
-    }
-    if (!rows.length && !confirm("没有勾选任何录入项，仅保存照片存档，不生成检测记录？"))
-      return;
+    const isTemp = s.docType === "handwritten_temp";
     const customs: Metric[] = [];
-    /* 复用旧自定义指标时若其单位为空，用报告单位回填（单位只是展示口径，不回改历史数值） */
-    const unitFills: { id: string; unit: string }[] = [];
-    /* itemId → 实际入库的指标 id：保存后回写到识别结果，再次编辑显示为现有指标 */
+    const unitFills: { id: string; unit?: string; refRange?: string }[] = [];
     const writes: { itemId: string; metricId: string }[] = [];
-    const finalRows = rows.map((r) => {
-      if (r.metric) {
-        if (r.fillUnit) unitFills.push({ id: r.metric, unit: r.fillUnit });
-        writes.push({ itemId: r.itemId, metricId: r.metric });
-        return { metric: r.metric, value: r.value };
+    let finalRows: { metric: string; value: string; at: string }[] = [];
+    let confirmedSession: ScanSession = s;
+
+    if (isTemp) {
+      const { rows, error: rowError } = sessionTempsToRows(s);
+      if (rowError) {
+        setError(rowError);
+        return;
       }
-      const name = (r.custom?.name ?? "").trim() || "未命名指标";
-      const existing = db.metrics.find(
-        (m) => m.custom && m.type === "number" && m.name === name,
-      );
-      if (existing) {
-        if (!existing.unit && r.custom?.unit)
-          unitFills.push({ id: existing.id, unit: r.custom.unit });
-        writes.push({ itemId: r.itemId, metricId: existing.id });
-        return { metric: existing.id, value: r.value };
+      if (!rows.length && !confirm("没有体温数值，仅保存照片存档，不生成检测记录？"))
+        return;
+      finalRows = rows.map((r) => ({ metric: "temp", value: r.value, at: r.at }));
+      confirmedSession = s;
+    } else {
+      const lookup = (id: string) => {
+        const m = db.metrics.find((x) => x.id === id);
+        return m ? { name: m.name, unit: m.unit } : undefined;
+      };
+      const forRows =
+        showsAttachedLabs(s.docType) && !includeLabs
+          ? { ...s, items: [] as typeof s.items }
+          : s;
+      const { rows, error: rowError, blocked } = sessionToRows(forRows, lookup);
+      if (rowError) {
+        setError(rowError);
+        return;
       }
-      const id = uid();
-      customs.push({
-        id,
-        name,
-        unit: r.custom?.unit ?? "",
-        type: "number",
-        custom: true,
+      if (blocked.length) {
+        setError(
+          `以下项目的单位与所选指标不一致，无法换算，已阻止保存：${blocked.join("、")}，请改选「新建自定义指标」或「不录入（仅存档）」`,
+        );
+        return;
+      }
+      const hasSections =
+        usesNarrativeForm(s.docType) &&
+        s.sections.some((sec) => sec.title.trim() || sec.body.trim());
+      if (
+        !rows.length &&
+        !hasSections &&
+        !confirm("没有勾选任何录入项，仅保存照片存档，不生成检测记录？")
+      )
+        return;
+      finalRows = rows.map((r) => {
+        if (r.metric) {
+          if (r.fillUnit) unitFills.push({ id: r.metric, unit: r.fillUnit });
+          writes.push({ itemId: r.itemId, metricId: r.metric });
+          return { metric: r.metric, value: r.value, at: s.reportDate };
+        }
+        const name = (r.custom?.name ?? "").trim() || "未命名指标";
+        const existing = db.metrics.find(
+          (m) => m.custom && m.type === "number" && m.name === name,
+        );
+        if (existing) {
+          if (!existing.unit && r.custom?.unit)
+            unitFills.push({ id: existing.id, unit: r.custom.unit });
+          if (!existing.refRange && r.custom?.refRange)
+            unitFills.push({ id: existing.id, refRange: r.custom.refRange });
+          writes.push({ itemId: r.itemId, metricId: existing.id });
+          return { metric: existing.id, value: r.value, at: s.reportDate };
+        }
+        const id = uid();
+        customs.push({
+          id,
+          name,
+          unit: r.custom?.unit ?? "",
+          type: "number",
+          custom: true,
+          ...(r.custom?.refRange ? { refRange: r.custom.refRange } : {}),
+        });
+        writes.push({ itemId: r.itemId, metricId: id });
+        return { metric: id, value: r.value, at: s.reportDate };
       });
-      writes.push({ itemId: r.itemId, metricId: id });
-      return { metric: id, value: r.value };
-    });
-    const byItem = new Map(writes.map((w) => [w.itemId, w.metricId]));
-    const confirmedSession: ScanSession = {
-      ...s,
-      items: s.items.map((i) =>
-        byItem.has(i.id) ? { ...i, target: byItem.get(i.id)! } : i,
-      ),
-    };
+      const byItem = new Map(writes.map((w) => [w.itemId, w.metricId]));
+      confirmedSession = {
+        ...s,
+        items: s.items.map((i) =>
+          byItem.has(i.id) ? { ...i, target: byItem.get(i.id)! } : i,
+        ),
+      };
+    }
     const record: ScanRecord = {
       id: editing?.id ?? uid(),
       photoId,
@@ -432,33 +489,70 @@ export function ScanDialog({
     if (
       similar &&
       !confirm(
-        `与已有扫描（${similar.session.reportDate} · ${scanSignature(similar.session).length} 项）报告日期相同、条目相近，可能重复录入，仍要保存？\n建议先在扫描记录中删除原件后再上传。`,
+        `与已有扫描（${similar.session.reportDate} · ${scanSignature(similar.session).length} 项）报告日期相同、条目相近，可能重复录入，仍要保存？\n建议先在扫描记录中删除原件后再上传`,
       )
     )
       return;
+
+    /* Zion：原件上云 + scan_record 行；失败不挡本机保存 */
+    let zionNote = "";
+    const zion = zionMediaFromEnv(ENV);
+    if (zion) {
+      try {
+        setBusy("正在上传原件到云端…");
+        const stored = await getPhoto(photoId);
+        const blob = stored?.blob ?? prepared?.blob;
+        if (!blob) throw Error("本地照片丢失");
+        const remote = await pushScanToZion({
+          config: zion,
+          blob,
+          mime: stored?.mime ?? prepared?.mime,
+          sourceFile: sourceName || undefined,
+          engine,
+          session: confirmedSession,
+          pipeline: confirmedSession.docType || "unknown",
+        });
+        record.zionRecordId = String(remote.recordId);
+        record.zionPhotoId = String(remote.imageId);
+      } catch (e) {
+        zionNote =
+          e instanceof Error
+            ? `；云端存档未成功（${e.message.slice(0, 60)}）`
+            : "；云端存档未成功";
+      } finally {
+        setBusy("");
+      }
+    }
+
+    const obsSource = scanObservationSource(confirmedSession.docType);
     try {
       update(
         (p) => {
-          p.observations = p.observations.filter((o) => o.group !== record.group);
-          for (const r of finalRows)
-            p.observations.push({
-              id: uid(),
-              group: record.group,
-              metric: r.metric,
-              value: r.value,
-              context: "",
-              at: s.reportDate,
-              created: now(),
-              source: SCAN_SOURCE,
-              author: actor.name,
-            });
+          const incoming = finalRows.map((r) => ({
+            id: uid(),
+            group: record.group,
+            metric: r.metric,
+            value: r.value,
+            context: "",
+            at: r.at,
+            created: now(),
+            source: obsSource,
+            author: actor.name,
+          }));
+          p.observations = mergeObservationsBySource(
+            p.observations,
+            incoming,
+            record.group,
+          );
           p.scans = [...(p.scans ?? []).filter((x) => x.id !== record.id), record];
         },
         (d) => {
           if (customs.length) d.metrics.push(...customs);
           for (const f of unitFills) {
             const m = d.metrics.find((x) => x.id === f.id);
-            if (m && !m.unit) m.unit = f.unit;
+            if (!m) continue;
+            if (f.unit && !m.unit) m.unit = f.unit;
+            if (f.refRange && !m.refRange) m.refRange = f.refRange;
           }
         },
       );
@@ -468,9 +562,10 @@ export function ScanDialog({
     }
     savedRef.current = true;
     onSaved(
-      finalRows.length
+      (finalRows.length
         ? "扫描记录已确认，检测与趋势已同步更新"
-        : "照片已存档，未生成检测记录",
+        : "照片已存档，未生成检测记录") +
+        (record.zionRecordId ? "；原件已上传 Zion" : zionNote),
     );
   };
 
@@ -507,10 +602,9 @@ export function ScanDialog({
       {stage === "pick" && (
         <div className="scan-pick">
           <p className="form-help">
-            适合识别：化验单、住院或门诊病历。手写体温单识别率低，建议手动录入体温
             {aiReady
-              ? " 已配置 AI 解析，识别时照片会发送到所配置的解析服务"
-              : " 未配置 AI 解析服务，将使用浏览器本地识别，也可直接手动填写"}
+              ? "适合识别：化验单、住院或门诊病历；手写体温单识别率低，建议手动录入体温；已配置 AI 解析，识别时照片会发送到所配置的解析服务"
+              : "适合识别：化验单、住院或门诊病历；手写体温单识别率低，建议手动录入体温；未配置 AI 解析服务，将使用浏览器本地识别，也可直接手动填写"}
           </p>
           <div className="scan-sources">
             <label>
@@ -549,7 +643,7 @@ export function ScanDialog({
           )}
           {dup?.kind === "similar" && !error && (
             <p className="form-help" role="status">
-              这张照片与已有扫描（{dup.scan.session.reportDate || dup.scan.createdAt.slice(0, 10)}）看起来非常相近，可能是同一份报告重拍。建议先在扫描记录中删除原件再上传
+              这张照片与已有扫描（{dup.scan.session.reportDate || dup.scan.createdAt.slice(0, 10)}）看起来非常相近，可能是同一份报告重拍；建议先在扫描记录中删除原件再上传
             </p>
           )}
           <div className="scan-actions">
@@ -576,7 +670,74 @@ export function ScanDialog({
           <p>{busy}</p>
         </div>
       )}
-      {stage === "confirm" && session && (
+      {stage === "classify" && session && (
+        <div className={"scan-confirm" + (bigPhoto ? " is-photo-big" : "")}>
+          <div className="scan-photo">
+            {previewUrl && (
+              <PhotoZoomer
+                src={previewUrl}
+                alt="报告原件"
+                big={bigPhoto}
+                onToggleBig={() => setBigPhoto((b) => !b)}
+              />
+            )}
+            <ScanNavSteps
+              current={0}
+              typeLabel={docTypeLabel(session.docType || "lab_table")}
+              onSelect={(i) => {
+                if (i === 1) {
+                  if (!session.docType)
+                    setSession(sessionForDocType(session, "lab_table"));
+                  setStage("enter");
+                }
+              }}
+            />
+          </div>
+          <div className="scan-side">
+            <div className="scan-meta">
+              <span className="scan-engine">{ENGINE_LABEL[engine]}</span>
+              {note && <small role="status">{note}</small>}
+            </div>
+            {session.analysis && <p className="scan-analysis">{session.analysis}</p>}
+            <p className="scan-classify-hint" role="status">
+              识别为「{docTypeLabel(session.docType || "lab_table")}」，请确认材料类型后再录入
+            </p>
+            <label className="scan-doctype">
+              材料类型
+              <select
+                value={session.docType || "lab_table"}
+                onChange={(e) => {
+                  touchedRef.current = true;
+                  const docType = e.target.value as ScanDocType;
+                  setSession(sessionForDocType(session, docType === "" ? "lab_table" : docType));
+                }}
+              >
+                {SCAN_DOC_TYPES.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {error && (
+              <p className="save-error" role="alert">
+                {error}
+              </p>
+            )}
+            <button
+              className="primary submit"
+              onClick={() => {
+                if (!session.docType)
+                  setSession(sessionForDocType(session, "lab_table"));
+                setStage("enter");
+              }}
+            >
+              确认类型，开始录入
+            </button>
+          </div>
+        </div>
+      )}
+      {stage === "enter" && session && (
         <div className={"scan-confirm" + (bigPhoto ? " is-photo-big" : "")}>
           <div className="scan-photo">
             {previewUrl && (
@@ -592,13 +753,40 @@ export function ScanDialog({
                 ? "拖动原件平移 · 滚轮缩放 · 右侧表格可直接编辑"
                 : "点击放大原件（放大后可拖动，右侧仍可编辑）"}
             </small>
+            {!editing && (
+              <ScanNavSteps
+                current={1}
+                typeLabel={docTypeLabel(session.docType)}
+                onSelect={(i) => {
+                  if (i === 0) setStage("classify");
+                }}
+              />
+            )}
           </div>
           <div className="scan-side">
             <div className="scan-meta">
               <span className="scan-engine">{ENGINE_LABEL[engine]}</span>
+              <span className="scan-source-tag">{scanObservationSource(session.docType)}</span>
               {note && <small role="status">{note}</small>}
             </div>
             {session.analysis && <p className="scan-analysis">{session.analysis}</p>}
+            <label className="scan-doctype">
+              材料类型
+              <select
+                value={session.docType || "lab_table"}
+                onChange={(e) => {
+                  touchedRef.current = true;
+                  const docType = e.target.value as ScanDocType;
+                  setSession(sessionForDocType(session, docType));
+                }}
+              >
+                {SCAN_DOC_TYPES.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             {busy && <p role="status">{busy}</p>}
             {session.questions.length > 0 && (
               <div className="scan-questions">
@@ -623,38 +811,193 @@ export function ScanDialog({
               </div>
             )}
             <div className="form-two">
-              <label>
-                报告日期
+              <label
+                className={
+                  session.docType !== "handwritten_temp" ? "scan-required-box" : undefined
+                }
+              >
+                <span className="scan-field-label">
+                  {session.docType === "handwritten_temp" ? "默认日期" : "报告日期"}
+                  {session.docType !== "handwritten_temp" && (
+                    <span className="scan-req-tag">必填</span>
+                  )}
+                </span>
                 <input
                   type="date"
                   value={session.reportDate || todayISO()}
+                  required={session.docType !== "handwritten_temp"}
+                  aria-required={session.docType !== "handwritten_temp"}
                   onChange={(e) => {
                     touchedRef.current = true;
                     setSession({ ...session, reportDate: e.target.value });
                   }}
                 />
               </label>
-              <label>
-                医院或机构 <em className="required">必填</em>
-                <input
-                  value={session.hospital}
-                  required
-                  aria-required="true"
-                  placeholder="照片上看不清请手动填写，这项必填"
-                  onChange={(e) => {
-                    touchedRef.current = true;
-                    hospitalConfirmedRef.current = true;
-                    setSession({ ...session, hospital: e.target.value });
-                  }}
-                />
-                {session.hospital && !hospitalConfirmedRef.current && (
-                  <small className="scan-confirm-hint">
-                    已从报告识别为「{session.hospital}」，请确认无误
-                  </small>
-                )}
-              </label>
+              {session.docType !== "handwritten_temp" &&
+                session.docType !== "clinical_photo" &&
+                session.docType !== "medication_log" &&
+                session.docType !== "prescription" &&
+                session.docType !== "other" && (
+                <label className="scan-required-box">
+                  <span className="scan-field-label">
+                    医院或机构
+                    <span className="scan-req-tag">必填</span>
+                  </span>
+                  <input
+                    value={session.hospital}
+                    required
+                    aria-required="true"
+                    placeholder="照片上看不清请手动填写，这项必填"
+                    onChange={(e) => {
+                      touchedRef.current = true;
+                      hospitalConfirmedRef.current = true;
+                      setSession({ ...session, hospital: e.target.value });
+                    }}
+                  />
+                  {session.hospital && !hospitalConfirmedRef.current && (
+                    <small className="scan-confirm-hint">
+                      已从报告识别为「{session.hospital}」，请确认无误
+                    </small>
+                  )}
+                </label>
+              )}
             </div>
-            {session.items.length > 0 && (
+            {usesNarrativeForm(session.docType) && (
+              <SectionFields
+                sections={session.sections}
+                onChange={(sections) => {
+                  touchedRef.current = true;
+                  setSession({ ...session, sections });
+                }}
+              />
+            )}
+            {showsAttachedLabs(session.docType) && (
+              <label className="scan-labs-switch">
+                <span className="scan-labs-switch-copy">
+                  <strong>顺便录入指标</strong>
+                  <small>默认关闭；打开后展开文内检验表，可勾进检测记录</small>
+                </span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={includeLabs}
+                  aria-checked={includeLabs}
+                  onChange={(e) => setIncludeLabs(e.target.checked)}
+                />
+              </label>
+            )}
+            {session.docType === "handwritten_temp" && (
+              <div className="scan-temps" role="group" aria-label="体温时点">
+                <div className="scan-items-head scan-temps-head">
+                  <span>日期</span>
+                  <span>时间</span>
+                  <span>℃</span>
+                  <span>备注</span>
+                  <span />
+                </div>
+                {session.temps.map((t) => (
+                  <div className="scan-temp-row" key={t.id}>
+                    <input
+                      type="date"
+                      value={t.date}
+                      aria-label="体温日期"
+                      onChange={(e) => {
+                        touchedRef.current = true;
+                        setSession({
+                          ...session,
+                          temps: session.temps.map((x) =>
+                            x.id === t.id ? { ...x, date: e.target.value } : x,
+                          ),
+                        });
+                      }}
+                    />
+                    <input
+                      type="time"
+                      value={t.time}
+                      aria-label="体温时间"
+                      onChange={(e) => {
+                        touchedRef.current = true;
+                        setSession({
+                          ...session,
+                          temps: session.temps.map((x) =>
+                            x.id === t.id ? { ...x, time: e.target.value } : x,
+                          ),
+                        });
+                      }}
+                    />
+                    <input
+                      inputMode="decimal"
+                      value={t.celsius}
+                      placeholder="℃"
+                      aria-label="体温数值"
+                      onChange={(e) => {
+                        touchedRef.current = true;
+                        setSession({
+                          ...session,
+                          temps: session.temps.map((x) =>
+                            x.id === t.id ? { ...x, celsius: e.target.value } : x,
+                          ),
+                        });
+                      }}
+                    />
+                    <input
+                      value={t.note}
+                      placeholder="备注"
+                      aria-label="体温备注"
+                      onChange={(e) => {
+                        touchedRef.current = true;
+                        setSession({
+                          ...session,
+                          temps: session.temps.map((x) =>
+                            x.id === t.id ? { ...x, note: e.target.value } : x,
+                          ),
+                        });
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="scan-remove"
+                      aria-label="删除此时点"
+                      onClick={() => {
+                        touchedRef.current = true;
+                        setSession({
+                          ...session,
+                          temps: session.temps.filter((x) => x.id !== t.id),
+                        });
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="scan-add"
+                  onClick={() => {
+                    touchedRef.current = true;
+                    setSession({
+                      ...session,
+                      temps: [
+                        ...session.temps,
+                        {
+                          id: uid(),
+                          date: session.reportDate || todayISO(),
+                          time: "",
+                          celsius: "",
+                          note: "",
+                        },
+                      ],
+                    });
+                  }}
+                >
+                  <Plus size={16} />
+                  添加时点
+                </button>
+              </div>
+            )}
+            {(usesLabGrid(session.docType) ||
+              (showsAttachedLabs(session.docType) && includeLabs)) &&
+              session.items.length > 0 && (
               <div
                 className={"scan-review" + (review ? " is-on" : "")}
                 role="group"
@@ -699,9 +1042,17 @@ export function ScanDialog({
                 )}
               </div>
             )}
+            {(usesLabGrid(session.docType) ||
+              (showsAttachedLabs(session.docType) && includeLabs)) && (
             <div className="scan-items">
+              {showsAttachedLabs(session.docType) && includeLabs && (
+                <p className="scan-attached-labs-note">
+                  文内指标（附属）。勾选录入会打上「{scanObservationSource(session.docType)}」标签；
+                  同日已有化验单数据时以化验单为准
+                </p>
+              )}
               <div className="scan-items-head">
-                <span>原文项目</span>
+                <span>{showsAttachedLabs(session.docType) ? "文内指标" : "原文项目"}</span>
                 <span>录入到</span>
                 <span>数值</span>
                 <span />
@@ -751,7 +1102,19 @@ export function ScanDialog({
                         <span className="scan-new-badge">将新建指标</span>
                       )}
                     </strong>
-                    {it.refRange && <small>参考 {it.refRange}</small>}
+                    {it.target === NEW_METRIC ? (
+                      <input
+                        className="scan-custom-ref"
+                        value={it.refRange}
+                        placeholder="参考范围"
+                        aria-label="参考范围"
+                        onChange={(e) =>
+                          setItem(it.id, { refRange: e.target.value })
+                        }
+                      />
+                    ) : (
+                      it.refRange && <small>参考 {it.refRange}</small>
+                    )}
                   </div>
                   <div className="scan-target">
                     {it.target === NEW_METRIC ? (
@@ -802,7 +1165,19 @@ export function ScanDialog({
                       placeholder="数值"
                       onChange={(e) => setItem(it.id, { value: e.target.value })}
                     />
-                    {it.unit && <small title={it.unit}>{prettyUnit(it.unit)}</small>}
+                    {it.target === NEW_METRIC ? (
+                      <input
+                        className="scan-custom-unit"
+                        value={it.unit}
+                        placeholder="单位"
+                        aria-label="单位"
+                        onChange={(e) => setItem(it.id, { unit: e.target.value })}
+                      />
+                    ) : (
+                      it.unit && (
+                        <small title={it.unit}>{prettyUnit(it.unit)}</small>
+                      )
+                    )}
                   </label>
                   <UnitNote item={it} metrics={db.metrics} row />
                   {review && idx === reviewAt && (
@@ -864,6 +1239,7 @@ export function ScanDialog({
                 添加一行
               </button>
             </div>
+            )}
             {error && (
               <p className="save-error" role="alert">
                 {error}
@@ -879,6 +1255,216 @@ export function ScanDialog({
         </div>
       )}
     </dialog>
+  );
+}
+
+/** 左栏竖排分步：圆标 + 竖连接线 + 可点已完成步；类型挂在「确认类型」旁 */
+function ScanNavSteps({
+  current,
+  typeLabel,
+  onSelect,
+}: {
+  current: 0 | 1;
+  typeLabel: string;
+  onSelect: (index: 0 | 1) => void;
+}) {
+  const steps = [
+    { title: `确认类型 · ${typeLabel}`, desc: "识别结果，可改选" },
+    { title: "录入", desc: "对照原件填写" },
+  ] as const;
+  return (
+    <nav className="scan-nav-steps" aria-label="录入步骤">
+      {steps.map((step, i) => {
+        const status =
+          i < current ? "finish" : i === current ? "process" : "wait";
+        const clickable = status === "finish" || (status === "wait" && current === 0 && i === 1);
+        return (
+          <Fragment key={i}>
+            {i > 0 && (
+              <div
+                className={
+                  "scan-nav-tail" + (current >= i ? " is-done" : "")
+                }
+                aria-hidden
+              />
+            )}
+            <button
+              type="button"
+              className={"scan-nav-step is-" + status}
+              aria-current={status === "process" ? "step" : undefined}
+              disabled={!clickable && status !== "process"}
+              onClick={() => {
+                if (status === "finish" || (current === 0 && i === 1))
+                  onSelect(i as 0 | 1);
+              }}
+            >
+              <span className="scan-nav-index" aria-hidden>
+                {status === "finish" ? <Check size={16} strokeWidth={2.5} /> : i + 1}
+              </span>
+              <span className="scan-nav-copy">
+                <strong>{step.title}</strong>
+                <small>{step.desc}</small>
+              </span>
+            </button>
+          </Fragment>
+        );
+      })}
+    </nav>
+  );
+}
+
+function SectionFields({
+  sections,
+  onChange,
+}: {
+  sections: ScanSection[];
+  onChange: (sections: ScanSection[]) => void;
+}) {
+  const blankRef = useRef<ScanSection | null>(null);
+  if (!blankRef.current) blankRef.current = newSection("", "");
+  const rows = sections.length ? sections : [blankRef.current];
+  /** 点过 OK 的节折成 capsule；再点 OK 展开 */
+  const [okIds, setOkIds] = useState<Set<string>>(() => new Set());
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const setAt = (id: string, patch: Partial<ScanSection>) => {
+    onChange(rows.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  };
+  const toggleOk = (id: string) => {
+    setConfirmId(null);
+    setOkIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const removeSection = (id: string) => {
+    setConfirmId(null);
+    setOkIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    onChange(rows.filter((s) => s.id !== id));
+  };
+  return (
+    <div className="scan-narrative" role="group" aria-label="文书分节">
+      <header className="scan-narrative-head">
+        <strong>对照原件核对栏目</strong>
+        <small>标题紧贴正文；OK 折成胶囊，删除需确认</small>
+      </header>
+      <ul className="scan-section-list">
+        {rows.map((sec) => {
+          const ok = okIds.has(sec.id);
+          const confirming = confirmId === sec.id;
+          const preview =
+            (sec.body || "").replace(/\s+/g, " ").trim() || "（正文空）";
+          const actions = (
+            <div className="scan-section-actions">
+              <button
+                type="button"
+                className={"scan-section-iconbtn" + (ok ? " is-on" : "")}
+                aria-pressed={ok}
+                aria-label={ok ? "撤回 OK，展开编辑" : "确认本节"}
+                title="OK"
+                onClick={() => toggleOk(sec.id)}
+              >
+                <Check size={15} strokeWidth={2.5} />
+              </button>
+              <div className="scan-section-del-wrap">
+                <button
+                  type="button"
+                  className="scan-section-iconbtn is-danger"
+                  aria-label="删除本节"
+                  aria-expanded={confirming}
+                  aria-haspopup="dialog"
+                  onClick={() =>
+                    setConfirmId(confirming ? null : sec.id)
+                  }
+                >
+                  <Trash2 size={15} />
+                </button>
+                {confirming && (
+                  <div
+                    className="scan-section-del-pop"
+                    role="dialog"
+                    aria-label="是否删除"
+                  >
+                    <p>是否删除？</p>
+                    <div className="scan-section-del-pop-actions">
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => setConfirmId(null)}
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        className="scan-section-del-confirm"
+                        onClick={() => removeSection(sec.id)}
+                      >
+                        确认删除
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+          if (ok) {
+            return (
+              <li key={sec.id} className="scan-section-capsule">
+                <button
+                  type="button"
+                  className="scan-section-capsule-main"
+                  onClick={() => toggleOk(sec.id)}
+                  aria-expanded={false}
+                  title="再点 OK 打开编辑"
+                >
+                  <Check size={14} strokeWidth={2.5} aria-hidden />
+                  <span className="scan-section-capsule-title">
+                    {sec.title.trim() || "未命名栏目"}
+                  </span>
+                  <span className="scan-section-capsule-body">{preview}</span>
+                </button>
+                {actions}
+              </li>
+            );
+          }
+          return (
+            <li key={sec.id} className="scan-section-card">
+              <div className="scan-section-card-top">
+                <input
+                  className="scan-section-title"
+                  value={sec.title}
+                  placeholder="栏目名"
+                  aria-label="栏目名"
+                  onChange={(e) => setAt(sec.id, { title: e.target.value })}
+                />
+                {actions}
+              </div>
+              <textarea
+                className="scan-section-body"
+                rows={Math.min(8, Math.max(2, Math.ceil(sec.body.length / 36)))}
+                value={sec.body}
+                placeholder="本节正文（对照左侧补全续行）"
+                aria-label={(sec.title || "本节") + "正文"}
+                onChange={(e) => setAt(sec.id, { body: e.target.value })}
+              />
+            </li>
+          );
+        })}
+      </ul>
+      <button
+        type="button"
+        className="scan-add"
+        onClick={() => onChange([...rows, newSection("", "")])}
+      >
+        <Plus size={16} />
+        添加一节
+      </button>
+    </div>
   );
 }
 
@@ -1295,12 +1881,12 @@ export function ScanRecords({
         </div>
         {readonly ? (
           <p className="scan-readonly" role="status">
-            当前无法上传扫描，因为你是医生模式。
+            当前无法上传扫描，因为你是医生模式
           </p>
         ) : (
           <>
             <p className="form-help scan-panel-lede">
-              每次拍照识别都保留原件与识别结果，可随时回顾和修改；修改会同步更新对应的检测记录。
+              每次拍照识别都保留原件与识别结果，可随时回顾和修改；修改会同步更新对应的检测记录
             </p>
             <div className="scan-sources">
             <label>
@@ -1332,7 +1918,7 @@ export function ScanRecords({
           </>
         )}
       </div>
-      {!scans.length && <p className="empty scan-panel-empty">还没有扫描记录。</p>}
+      {!scans.length && <p className="empty scan-panel-empty">还没有扫描记录</p>}
       {scans.map((scan) => {
         const rows = patient.observations.filter((o) => o.group === scan.group);
         return (

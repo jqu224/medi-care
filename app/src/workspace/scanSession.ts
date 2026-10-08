@@ -6,6 +6,140 @@ import { checkUnit, prettyUnit, scaleDecimal } from "./scanUnits";
 export type ScanEngineKind = "vision" | "ocr" | "manual";
 export type ScanAbnormal = "" | "high" | "low";
 
+/** 扫描材料类型：先判型再按格式录入；空串表示未判定（本地 OCR 兜底） */
+export type ScanDocType =
+  | ""
+  | "lab_table"
+  | "medical_record"
+  | "referral"
+  | "prescription"
+  | "handwritten_temp"
+  | "clinical_photo"
+  | "medication_log"
+  | "other";
+
+export const SCAN_DOC_TYPES: { id: Exclude<ScanDocType, "">; label: string }[] = [
+  { id: "lab_table", label: "化验单" },
+  { id: "medical_record", label: "门诊病历" },
+  { id: "referral", label: "转诊单" },
+  { id: "prescription", label: "处方单" },
+  { id: "handwritten_temp", label: "手写体温单" },
+  { id: "clinical_photo", label: "临床表现照片" },
+  { id: "medication_log", label: "服药记录" },
+  { id: "other", label: "其他" },
+];
+
+export function docTypeLabel(id: ScanDocType): string {
+  if (!id) return "未判定";
+  return SCAN_DOC_TYPES.find((d) => d.id === id)?.label ?? id;
+}
+
+/** 化验主表（项目×数值）；空串暂按化验单处理 */
+export function usesLabGrid(doc: ScanDocType): boolean {
+  return doc === "lab_table" || doc === "";
+}
+
+/** 门诊病历 / 转诊单：分节叙事为主 */
+export function usesNarrativeForm(doc: ScanDocType): boolean {
+  return doc === "medical_record" || doc === "referral";
+}
+
+/** 叙事材料上挂的文内检验（附属，不是主表） */
+export function showsAttachedLabs(doc: ScanDocType): boolean {
+  return doc === "medical_record" || doc === "referral";
+}
+
+/** 文书分节：标题照抄原件栏目名，不写死「主诉/现病史」模板 */
+export type ScanSection = {
+  id: string;
+  title: string;
+  body: string;
+};
+
+export function emptySections(): ScanSection[] {
+  return [];
+}
+
+export function newSection(title = "", body = ""): ScanSection {
+  return { id: uid(), title, body };
+}
+
+/** @deprecated 旧固定槽；读盘时转成 sections */
+export type ScanNarrative = {
+  chiefComplaint: string;
+  presentIllness: string;
+  pastHistory: string;
+  exam: string;
+  labsSummary: string;
+  diagnosis: string;
+  plan: string;
+  situation: string;
+  impression: string;
+  transferTo: string;
+};
+
+export function emptyNarrative(): ScanNarrative {
+  return {
+    chiefComplaint: "",
+    presentIllness: "",
+    pastHistory: "",
+    exam: "",
+    labsSummary: "",
+    diagnosis: "",
+    plan: "",
+    situation: "",
+    impression: "",
+    transferTo: "",
+  };
+}
+
+const LEGACY_NARRATIVE_TITLES: [keyof ScanNarrative, string][] = [
+  ["chiefComplaint", "主诉"],
+  ["presentIllness", "现病史"],
+  ["pastHistory", "既往史"],
+  ["exam", "查体"],
+  ["labsSummary", "辅助检查"],
+  ["diagnosis", "诊断"],
+  ["plan", "处理"],
+  ["situation", "情况说明"],
+  ["impression", "初步印象"],
+  ["transferTo", "转往科室/医院"],
+];
+
+export function narrativeToSections(n: ScanNarrative): ScanSection[] {
+  return LEGACY_NARRATIVE_TITLES.filter(([k]) => n[k]?.trim())
+    .map(([k, title]) => newSection(title, n[k]));
+}
+
+/** Step1 改类型时：清掉与新类型不匹配的草稿，避免化验格子残留在病历上 */
+export function sessionForDocType(
+  session: ScanSession,
+  docType: ScanDocType,
+): ScanSession {
+  const base = { ...session, docType };
+  if (docType === "handwritten_temp")
+    return { ...base, items: [], sections: [] };
+  if (usesLabGrid(docType))
+    return { ...base, temps: [], sections: [] };
+  if (usesNarrativeForm(docType))
+    return healNarrativeSections({ ...base, temps: [] });
+  return {
+    ...base,
+    items: [],
+    temps: [],
+    sections: [],
+  };
+}
+
+/** 手写体温单上的一行：日期 + 时间 + ℃ */
+export type ScanTempRow = {
+  id: string;
+  date: string;
+  time: string;
+  celsius: string;
+  note: string;
+};
+
 export type ScanItem = {
   id: string;
   rawName: string;
@@ -45,7 +179,13 @@ export type ScanSession = {
   /** 报告日期 YYYY-MM-DD，无法确定时为空串 */
   reportDate: string;
   hospital: string;
+  /** 材料类型；空串=未判定 */
+  docType: ScanDocType;
   items: ScanItem[];
+  /** 手写体温单抽出的多时点体温；其它类型为空数组 */
+  temps: ScanTempRow[];
+  /** 门诊病历 / 转诊单：动态分节（标题来自原件） */
+  sections: ScanSection[];
 };
 
 export type ScanRecord = {
@@ -61,10 +201,79 @@ export type ScanRecord = {
   photoHash?: string;
   /** 16×16 感知哈希（hex），重拍相似去重 */
   photoAhash?: string;
+  /** Zion scan_record.id（上传成功后） */
+  zionRecordId?: string;
+  /** Zion 图片资源 id */
+  zionPhotoId?: string;
 };
 
 export const NEW_METRIC = "__new__";
+/** @deprecated 用 scanObservationSource(docType)；保留给旧记录展示 */
 export const SCAN_SOURCE = "扫描录入·已确认";
+
+/** 检测记录来源标签：区分手录 / 化验单 / 转诊单 / 病历等 */
+export function scanObservationSource(docType: ScanDocType): string {
+  switch (docType) {
+    case "lab_table":
+    case "":
+      return "扫描·化验单";
+    case "medical_record":
+      return "扫描·门诊病历";
+    case "referral":
+      return "扫描·转诊单";
+    case "prescription":
+      return "扫描·处方单";
+    case "handwritten_temp":
+      return "扫描·体温单";
+    case "clinical_photo":
+      return "扫描·临床表现";
+    case "medication_log":
+      return "扫描·用药记录";
+    default:
+      return "扫描·其他";
+  }
+}
+
+/** 同源冲突时保留优先级更高的：化验单 > 病历/诊断 > 转诊 > 其它扫描 > 手录 */
+export function observationSourceRank(source: string): number {
+  const s = source ?? "";
+  if (s.includes("化验单")) return 100;
+  if (s.includes("门诊病历") || s.includes("诊断")) return 60;
+  if (s.includes("转诊单")) return 50;
+  if (s.includes("体温单")) return 45;
+  if (s.includes("处方") || s.includes("用药")) return 40;
+  if (s.startsWith("扫描") || s.includes("扫描录入")) return 30;
+  if (s.includes("手录") || s.includes("自录")) return 20;
+  return 10;
+}
+
+/**
+ * 把本批扫描行并入已有检测记录：同指标同日只留一条。
+ * 已有化验单 → 跳过较弱来源；本批是化验单且旧的是转诊/手录 → 替换。
+ */
+export function mergeObservationsBySource<T extends {
+  id: string;
+  group: string;
+  metric: string;
+  value: string;
+  at: string;
+  source: string;
+}>(existing: T[], incoming: T[], replaceGroup: string): T[] {
+  const out = existing.filter((o) => o.group !== replaceGroup);
+  for (const row of incoming) {
+    const day = (row.at || "").slice(0, 10);
+    const idx = out.findIndex(
+      (o) => o.metric === row.metric && (o.at || "").slice(0, 10) === day,
+    );
+    if (idx < 0) {
+      out.push(row);
+      continue;
+    }
+    if (observationSourceRank(row.source) > observationSourceRank(out[idx]!.source))
+      out[idx] = row;
+  }
+  return out;
+}
 
 /** 两个 hex 指纹的汉明距离（位数） */
 export function hammingHex(a: string, b: string): number {
@@ -96,10 +305,21 @@ export function findDuplicatePhoto(
 
 /** 内容签名：要录入的「指标=数值」集合，用于报告级去重 */
 export function scanSignature(session: ScanSession): string[] {
-  return session.items
+  const items = session.items
     .filter((i) => i.target && i.value.trim())
-    .map((i) => `${i.target}=${i.value.trim()}`)
-    .sort();
+    .map((i) => `${i.target}=${i.value.trim()}`);
+  const temps = session.temps
+    .filter((t) => t.celsius.trim())
+    .map((t) => {
+      const date = normalizeDate(t.date) || session.reportDate || "";
+      const time = t.time.trim().replace(/：/g, ":");
+      const at =
+        date && /^\d{1,2}:\d{2}$/.test(time)
+          ? `${date}T${time.padStart(5, "0")}`
+          : date;
+      return `temp=${t.celsius.trim()}@${at}`;
+    });
+  return [...items, ...temps].sort();
 }
 
 /** 明细行编号：与原件对照用。
@@ -179,7 +399,8 @@ const ALIAS_EXACT: [string, string][] = [
   ["ldh", "ldh"],
   ["hba1c", "a1c"],
 ];
-/** 这些是派生统计项或相邻检测，不能映射到同名主指标 */
+/** 派生统计项：禁止映射到同名主指标（如「平均血小板体积」≠「血小板」），
+    但仍应默认「新建自定义指标」，不能落到「不录入」 */
 const ALIAS_EXCLUDE = [
   "压积",
   "分布宽度",
@@ -252,6 +473,7 @@ export type RawScanItem = {
   unit?: string;
   refRange?: string;
   abnormal?: string;
+  engName?: string;
   seq?: string;
   /** 双列报告并排时来自左列（0）/右列（1）；单列报告不设 */
   col?: number;
@@ -273,15 +495,47 @@ function looksLikeUnit(token: string) {
   return /[A-Za-z]/.test(token) || /^10\^?\d/.test(token);
 }
 
-/** OCR 常把 ↑/↓ 认成形近字（个、4、t），紧贴数值的第一个 token 不可信，
-    从剩余文本里挑第一个合法单位 */
+/** OCR 把 pg/ml 拆成 pg + /ml、或 g/ 缺 L 时，尝试拼成完整单位 */
+function mergeUnitFragment(head: string, next?: string): string {
+  const a = head.replace(/[↑↓]/g, "").replace(/^[（(]+|[）)]+$/g, "");
+  if (!a) return "";
+  if (!next) {
+    if (/^[a-z]{1,4}\/$/i.test(a)) return a + "L";
+    return "";
+  }
+  const b = next.replace(/[↑↓]/g, "").replace(/^[（(]+|[）)]+$/g, "");
+  if (/^[a-z]{1,8}-?$/i.test(a) && /^\/?-?[a-z]{1,6}$/i.test(b)) {
+    const joined =
+      a.replace(/-$/, "") +
+      (b.startsWith("/") || b.startsWith("-/") ? b.replace(/^-/, "") : `/${b.replace(/^-/, "")}`);
+    if (looksLikeUnit(joined)) return joined;
+  }
+  if (/^[a-z]{1,3}\/?$/i.test(a) && /^[a-z]{1,4}$/i.test(b)) {
+    const joined = a.endsWith("/") ? a + b : `${a}/${b}`;
+    if (looksLikeUnit(joined)) return joined;
+  }
+  return "";
+}
+
+function unitFromToken(clean: string, next?: string): string {
+  if (/%$/.test(clean) && !/[A-Za-z]/.test(clean.slice(0, -1))) return "%";
+  const merged = mergeUnitFragment(clean, next);
+  if (merged) return merged.slice(0, 12);
+  const lone = mergeUnitFragment(clean);
+  if (lone) return lone.slice(0, 12);
+  if (looksLikeUnit(clean)) return clean.slice(0, 12);
+  return "";
+}
+
+/** OCR 常把 ↑/↓ 认成形近字（个、4、t），从剩余文本里挑单位（参考区间前后均可） */
 function pickUnit(rest: string) {
-  for (const raw of rest.split(/[\s↑↓、,，;；]+/)) {
-    const token = raw.replace(/^[（(]+|[）)]+$/g, "");
-    /* 数字后缀的百分号（1%）是排版噪音，按百分比单位处理 */
-    if (token.endsWith("%") && /^[A-Za-z0-9.]+$/.test(token.slice(0, -1)))
-      return "%";
-    if (looksLikeUnit(token)) return token;
+  const parts = rest
+    .split(/[\s↑↓、,，;；]+/)
+    .map((raw) => raw.replace(/^[（(]+|[）)]+$/g, ""))
+    .filter(Boolean);
+  for (let i = 0; i < parts.length; i++) {
+    const u = unitFromToken(parts[i], parts[i + 1]);
+    if (u) return u;
   }
   return "";
 }
@@ -485,8 +739,7 @@ const isNumTok = (t: string) => /^[<≤>≥]?\d+(?:\.\d+)?$/.test(t);
 const isRangeTok = (t: string) => /^\d+(?:\.\d+)?[-~–至]\d+(?:\.\d+)?$/.test(t);
 const isEngTok = (t: string) => /^\d{0,2}[A-Za-z][A-Za-z-]+$/.test(t) && !/^[a-z]$/.test(t);
 
-/** 组内按类型顺序解析：中文名打头 → 数值 → 单位 → 参考区间 → 英文缩写。
-    类型规则比精确列坐标更抗拉丁/中文宽度差异带来的漂移。
+/** 组内按类型解析：中文名 → 数值 → 单位与参考区间（两列顺序不固定，App 竖版常为 数值→参考→单位）→ 英文缩写。
     真实报告里 OCR 常把数值和名字粘在一起（「平均红细胞血红蛋白浓356」），
     组里没有独立数值 token 时，把名字尾部的数字拆出来当数值 */
 function classifyTokens(tokens: Token[]) {
@@ -523,10 +776,6 @@ function classifyTokens(tokens: Token[]) {
       eng = t.text;
       continue;
     }
-    if (!ref && isRangeTok(t.text)) {
-      ref = t.text;
-      continue;
-    }
     if (!sawNumber && isNumTok(t.text)) {
       value = t.text.replace(/^[<≤>≥]+/, "");
       sawNumber = true;
@@ -545,13 +794,19 @@ function classifyTokens(tokens: Token[]) {
       name.push(t.text);
       continue;
     }
-    if (!unit && !ref) {
-      const clean = t.text.replace(/[↑↓]/g, "");
-      /* 「+%」「1%」：前缀是符号或数字的百分号都是排版噪音，单位取 % */
-      if (/%$/.test(clean) && !/[A-Za-z]/.test(clean.slice(0, -1))) unit = "%";
-      else if (looksLikeUnit(clean)) unit = clean.slice(0, 12);
-      else leftovers.push(t);
+    if (!ref && isRangeTok(t.text)) {
+      ref = t.text;
       continue;
+    }
+    if (!unit) {
+      const clean = t.text.replace(/[↑↓]/g, "");
+      const nextText = tokens[i + 1]?.text;
+      const picked = unitFromToken(clean, nextText);
+      if (picked) {
+        unit = picked;
+        if (mergeUnitFragment(clean, nextText)) i += 1;
+        continue;
+      }
     }
     leftovers.push(t);
   }
@@ -617,10 +872,15 @@ function splitRow(tokens: Token[], expected: number | null): Token[][] {
 
 /** 版面分析：找到表头与列结构后，表区行按列取值；表外行（页眉页脚）单独返回 */
 export function sessionFromLines(lines: OcrLine[]): ScanSession {
+  const joined = lines.map((l) => l.text).join("\n");
+  /* 病历叙事页没有化验表头：先按内嵌检验摘要抽，避免段落被拆成假检验行 */
+  /* 病历页无论有没有内嵌检验，都走叙事分节；不要掉进化验表头解析 */
+  if (looksLikeMedicalRecord(joined)) return sessionFromOcr(joined);
   const header = lines.find((l) => isHeaderLine(l.text));
   if (!header) {
-    const fallback = sessionFromOcr(lines.map((l) => l.text).join("\n"));
-    fallback.analysis = fallback.analysis.replace("本地识别", "无表头，按行识别");
+    const fallback = sessionFromOcr(joined);
+    if (!looksLikeMedicalRecord(joined))
+      fallback.analysis = fallback.analysis.replace("本地识别", "无表头，按行识别");
     return fallback;
   }
   const groups = columnsFromAnchors(collectAnchors(header), header);
@@ -695,38 +955,154 @@ export function sessionFromLines(lines: OcrLine[]): ScanSession {
       ? `表格解析：${items.length} 行检验项目${groups.length > 1 ? "（左右两组列并排，已按左列→右列顺序排好）" : ""}，${matched} 项匹配指标目录，${auto} 项将新建自定义指标；页眉页脚（日期/页码/签名）已排除`
       : "表格里没有读到可录入的检验数值，请对照原件手动填写",
   );
+  session.docType = items.length ? "lab_table" : "";
   session.reportDate =
     extractReportDate(dateText) || extractReportDate(lines.map((l) => l.text).join("\n"));
   session.items = items;
   return session;
 }
 
-export function emptySession(analysis = ""): ScanSession {  return {
+export function emptySession(analysis = ""): ScanSession {
+  return {
     analysis,
     questions: [],
     reportDate: "",
     hospital: "",
+    docType: "",
     items: [],
+    temps: [],
+    sections: [],
   };
+}
+
+function normalizeSections(raw: unknown): ScanSection[] {
+  if (Array.isArray(raw)) {
+    return raw
+      .slice(0, 24)
+      .map((row) => {
+        const o = (row ?? {}) as Record<string, unknown>;
+        const title = toStringOrEmpty(o.title ?? o.heading ?? o.name ?? o.label, 40);
+        const body = toStringOrEmpty(o.body ?? o.text ?? o.content ?? o.value, 4000);
+        return newSection(title, body);
+      })
+      .filter((s) => s.title || s.body);
+  }
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    /* 旧固定槽或 AI 用中文键：{ "主诉": "…", chiefComplaint: "…" } */
+    const fromKeys: ScanSection[] = [];
+    for (const [k, title] of LEGACY_NARRATIVE_TITLES) {
+      const v = toStringOrEmpty(o[k] ?? o[title], 4000);
+      if (v) fromKeys.push(newSection(title, v));
+    }
+    if (fromKeys.length) return fromKeys;
+    for (const [k, v] of Object.entries(o)) {
+      if (typeof v !== "string" || !v.trim()) continue;
+      if (
+        /^(docType|type|analysis|reportDate|hospital|items|temps|questions|sections|narrative|raw)$/.test(
+          k,
+        )
+      )
+        continue;
+      fromKeys.push(newSection(k.slice(0, 40), v.trim().slice(0, 4000)));
+    }
+    return fromKeys.slice(0, 24);
+  }
+  return [];
+}
+
+/** `[] ?? narrative` 不会回退——空数组也要换源 */
+function firstNonEmptySections(...sources: unknown[]): ScanSection[] {
+  for (const raw of sources) {
+    const secs = normalizeSections(raw);
+    if (secs.length) return secs;
+  }
+  return [];
+}
+
+/**
+ * 病历/转诊：已有分节就保留；否则从 analysis / 原文里按「栏目：正文」再抽一遍。
+ * 对齐化验单 items 的「识别完直接填进表」体验。
+ */
+export function healNarrativeSections(
+  session: ScanSession,
+  rawText = "",
+): ScanSession {
+  const narrative =
+    usesNarrativeForm(session.docType) ||
+    (!session.docType &&
+      (looksLikeMedicalRecord(session.analysis) ||
+        looksLikeMedicalRecord(rawText)));
+  if (!narrative) return session;
+  if (session.sections.some((s) => s.title.trim() || s.body.trim()))
+    return session;
+  let fromRaw: ScanSection[] = [];
+  if (rawText.trim()) {
+    try {
+      const j = extractJson(rawText) as Record<string, unknown>;
+      fromRaw = firstNonEmptySections(j.sections, j.narrative);
+    } catch {
+      /* raw 不是 JSON 时走纯文本 */
+    }
+  }
+  const fromText = extractNarrativeSections(
+    [session.analysis, rawText].filter(Boolean).join("\n"),
+  );
+  const sections = fromRaw.length ? fromRaw : fromText;
+  if (!sections.length) return session;
+  return {
+    ...session,
+    docType:
+      session.docType ||
+      (looksLikeMedicalRecord(rawText) || looksLikeMedicalRecord(session.analysis)
+        ? "medical_record"
+        : session.docType),
+    sections,
+  };
+}
+
+function asDocType(v: unknown): ScanDocType {
+  const s = typeof v === "string" ? v.trim() : "";
+  return SCAN_DOC_TYPES.some((d) => d.id === s) ? (s as ScanDocType) : "";
+}
+
+function normalizeTemps(raw: unknown): ScanTempRow[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 60).map((row) => {
+    const o = (row ?? {}) as Record<string, unknown>;
+    const date =
+      normalizeDate(toStringOrEmpty(o.date ?? o.day, 24)) ||
+      toStringOrEmpty(o.date ?? o.day, 16);
+    const time = toStringOrEmpty(o.time ?? o.clock, 8).replace(/：/g, ":");
+    const celsius = toStringOrEmpty(o.celsius ?? o.value ?? o.temp, 8).replace(
+      /[℃度]/g,
+      "",
+    );
+    return {
+      id: uid(),
+      date,
+      time,
+      celsius,
+      note: toStringOrEmpty(o.note ?? o.remark, 40),
+    };
+  }).filter((t) => t.celsius || t.date || t.time || t.note);
 }
 
 function toStringOrEmpty(v: unknown, max: number) {
   return typeof v === "string" ? v.trim().slice(0, max) : "";
 }
 
-/** 录入目标默认值：匹配目录用目录项；没匹配但有单位/参考区间/箭头的
-    视为真实检验项目，默认新建自定义指标（未知的指标不能悄悄丢掉）；
-    什么信号都没有的行当噪音，默认仅存档 */
+/** 录入目标默认值：匹配目录用目录项；其余一律新建自定义指标。
+    「不录入」只留给用户手动改选——识别出来的行不能默认跳过（含 MPV 等派生项）。 */
 export function defaultTarget(
   rawName: string,
-  unit: string,
-  refRange: string,
-  abnormal: string,
+  _unit?: string,
+  _refRange?: string,
+  _abnormal?: string,
 ): string {
   const hit = matchMetricAlias(rawName);
   if (hit) return hit;
-  if (unit || refRange || abnormal) return NEW_METRIC;
-  return "";
+  return NEW_METRIC;
 }
 
 /** AI 返回的任意 JSON → 受控 ScanSession；无法识别的字段一律丢弃 */
@@ -775,27 +1151,180 @@ export function normalizeSession(raw: unknown): ScanSession {
       })
       .filter((i) => i.rawName && i.value)
     : [];
+  const docType = asDocType(s.docType ?? s.type);
+  const temps = normalizeTemps(s.temps);
+  const analysis = toStringOrEmpty(s.analysis, 240);
+  /* 空 sections:[] 不能挡住 narrative / 顶栏中文键；再不行从 analysis 抽 */
+  const primarySections = firstNonEmptySections(s.sections, s.narrative, s);
+  const sections = primarySections.length
+    ? primarySections
+    : extractNarrativeSections(analysis);
+  const keepSections = !docType || usesNarrativeForm(docType);
   return {
-    analysis: toStringOrEmpty(s.analysis, 240),
+    analysis,
     questions: questions.filter((q) => q.text && q.options.length),
     reportDate: normalizeDate(toStringOrEmpty(s.reportDate, 24)),
     hospital: toStringOrEmpty(s.hospital, 40),
-    items,
+    docType,
+    /* 体温单强制清空检验行；纯存档类型清空检验行 */
+    items:
+      docType === "handwritten_temp" ||
+      docType === "clinical_photo" ||
+      docType === "medication_log" ||
+      docType === "prescription" ||
+      docType === "other"
+        ? []
+        : items,
+    temps: docType === "handwritten_temp" ? temps : [],
+    sections: keepSections ? sections : [],
   };
 }
 
+/** 手写体温单 → 检测记录草稿；每条带独立 at（日期或日期T时间） */
+export function sessionTempsToRows(session: ScanSession): {
+  rows: { at: string; value: string }[];
+  error: string;
+} {
+  const rows: { at: string; value: string }[] = [];
+  const bad: string[] = [];
+  for (const t of session.temps) {
+    const value = t.celsius.trim();
+    if (!value) continue;
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 34 || n > 43) {
+      bad.push(t.time || t.date || value);
+      continue;
+    }
+    const date = normalizeDate(t.date) || session.reportDate;
+    if (!date) {
+      bad.push(t.time || value);
+      continue;
+    }
+    const time = t.time.trim().replace(/：/g, ":");
+    const at =
+      /^\d{1,2}:\d{2}$/.test(time)
+        ? `${date}T${time.padStart(5, "0")}`
+        : date;
+    rows.push({ at, value: String(n) });
+  }
+  return {
+    rows,
+    error: bad.length
+      ? `以下体温数值或日期无效，请修正后再保存：${bad.join("、")}`
+      : "",
+  };
+}
+
+/** 门诊/住院病历叙事页：主诉/现病史/辅助检查，不是化验表格 */
+export function looksLikeMedicalRecord(text: string): boolean {
+  return /主\s*诉|现病史|辅助检查|医师签名|查\s*体|处\s*理/.test(text);
+}
+
+/** 像不像病历栏目名（主诉/现病史…），避免把「现：司库奇尤」当成新一节 */
+function looksLikeSectionHeading(title: string): boolean {
+  if (title.length < 2 || title.length > 16) return false;
+  if (/医师签名|报告人|核对者|第\d+页/.test(title)) return false;
+  if (/^[A-Za-z0-9.\-\s%]+$/.test(title)) return false;
+  if (matchMetricAlias(title) || matchEngAlias(title)) return false;
+  /* 正文里常见的短标签「现：」「另：」不是栏目；带 诉/史/体… 的才算 */
+  if (title.length <= 2 && !/[诉史体检查断理情诊科嘱往]/.test(title))
+    return false;
+  return true;
+}
+
+/**
+ * 从病历 OCR 抽动态分节：标题照抄原件「××：」，不套固定槽。
+ * 同一栏目下多行续写要接到 body（直到下一个栏目名），不能只留标题那一行右边。
+ */
+export function extractNarrativeSections(text: string): ScanSection[] {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const out: { title: string; parts: string[] }[] = [];
+  let cur: { title: string; parts: string[] } | null = null;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    const m = line.match(/^([^\n：:]{1,16})[：:]\s*(.*)$/);
+    const title = m ? m[1]!.trim().replace(/\s+/g, "") : "";
+    const rest = m ? m[2]!.trim() : "";
+    if (m && looksLikeSectionHeading(title)) {
+      cur = { title, parts: rest ? [rest] : [] };
+      out.push(cur);
+      continue;
+    }
+    if (!cur) continue;
+    /* 续行：整行并入上一节（含「现：司库奇尤…」这种短标签行） */
+    cur.parts.push(line);
+  }
+  return out
+    .map((s) => newSection(s.title, s.parts.join("\n").trim()))
+    .filter((s) => s.title || s.body)
+    .slice(0, 24);
+}
+
+/**
+ * 从病历「辅助检查」分号串列抽检验值（如 WBC 7.28×10⁹/L; PLT 215）。
+ * 只认明确缩写/中文名，避免把叙事拆成假检验行。
+ */
+export function extractInlineLabs(text: string): RawScanItem[] {
+  const specs: { re: RegExp; rawName: string; eng?: string; unit: string }[] = [
+    { re: /\bWBC\s*[：:]?\s*([\d.]+)\s*(×\s*10[⁹9^]*\s*\/?\s*L|x?\s*10\^?9\s*\/?\s*L)?/i, rawName: "白细胞", eng: "WBC", unit: "×10⁹/L" },
+    { re: /\b(?:HGB|Hb)\s*[：:]?\s*([\d.]+)\s*(g\s*\/?\s*L)?/i, rawName: "血红蛋白", eng: "HGB", unit: "g/L" },
+    { re: /\bPLT\s*[：:]?\s*([\d.]+)\s*(×\s*10[⁹9^]*\s*\/?\s*L|x?\s*10\^?9\s*\/?\s*L)?/i, rawName: "血小板", eng: "PLT", unit: "×10⁹/L" },
+    { re: /\bLY#?\s*[：:]?\s*([\d.]+)\s*(×\s*10[⁹9^]*\s*\/?\s*L)?/i, rawName: "淋巴细胞", eng: "LY", unit: "×10⁹/L" },
+    { re: /\bALT\s*[：:]?\s*([\d.]+)\s*(U\s*\/?\s*L)?/i, rawName: "谷丙转氨酶", eng: "ALT", unit: "U/L" },
+    { re: /\bAST\s*[：:]?\s*([\d.]+)\s*(U\s*\/?\s*L)?/i, rawName: "谷草转氨酶", eng: "AST", unit: "U/L" },
+    { re: /\bCr(?:\(E\))?\s*[：:]?\s*([\d.]+)\s*(μ?mol\s*\/?\s*L)?/i, rawName: "肌酐", eng: "Cr", unit: "μmol/L" },
+    { re: /\bhsCRP\s*[：:]?\s*([\d.]+)\s*(mg\s*\/?\s*L)?/i, rawName: "超敏C反应蛋白", eng: "hsCRP", unit: "mg/L" },
+    { re: /\bCRP\s*[：:]?\s*([\d.]+)\s*(mg\s*\/?\s*L)?/i, rawName: "C反应蛋白", eng: "CRP", unit: "mg/L" },
+    { re: /\bESR\s*[：:]?\s*([\d.]+)\s*(mm\s*\/?\s*h)?/i, rawName: "血沉", eng: "ESR", unit: "mm/h" },
+    { re: /铁蛋白\s*[：:]?\s*([\d.]+)\s*(ng\s*\/?\s*mL|μg\s*\/?\s*L)?/i, rawName: "血清铁蛋白", unit: "ng/mL" },
+  ];
+  const out: RawScanItem[] = [];
+  const seen = new Set<string>();
+  for (const s of specs) {
+    const m = text.match(s.re);
+    if (!m) continue;
+    const value = m[1]!;
+    const key = `${s.rawName}=${value}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      rawName: s.rawName,
+      value,
+      unit: s.unit,
+      ...(s.eng ? { engName: s.eng } : {}),
+    });
+  }
+  return out;
+}
+
 export function sessionFromOcr(text: string): ScanSession {
-  const rows = parseOcrLines(text);
-  const matched = rows.filter((r) => matchMetricAlias(r.rawName));
+  const medical = looksLikeMedicalRecord(text);
+  const inline = medical ? extractInlineLabs(text) : [];
+  const rows = inline.length ? inline : parseOcrLines(text);
+  const matched = rows.filter(
+    (r) => matchMetricAlias(r.rawName) || matchEngAlias(r.engName ?? ""),
+  );
   const auto = rows.filter(
-    (r) => !matchMetricAlias(r.rawName) && (r.unit || r.refRange || r.abnormal),
+    (r) =>
+      !matchMetricAlias(r.rawName) &&
+      !matchEngAlias(r.engName ?? "") &&
+      (r.unit || r.refRange || r.abnormal),
   );
   const session = emptySession(
-    rows.length
-      ? `本地识别到 ${rows.length} 行数据：${matched.length} 项匹配指标目录，${auto.length} 项将新建自定义指标；不需要的行可改为不录入`
-      : "本地识别没有读到有效的检验数值，请对照原件手动填写",
+    medical && inline.length
+      ? `门诊/住院病历：从辅助检查摘要抽出 ${inline.length} 项检验数值，${matched.length} 项匹配指标目录；叙事正文未录入`
+      : rows.length
+        ? `本地识别到 ${rows.length} 行数据：${matched.length} 项匹配指标目录，${auto.length} 项将新建自定义指标；不需要的行可改为不录入`
+        : "本地识别没有读到有效的检验数值，请对照原件手动填写",
   );
+  session.docType = medical
+    ? "medical_record"
+    : rows.length
+      ? "lab_table"
+      : "";
   session.reportDate = extractReportDate(text);
+  if (medical) session.sections = extractNarrativeSections(text);
   session.items = rows.map((r) => ({
     id: uid(),
     rawName: r.rawName,
@@ -804,12 +1333,16 @@ export function sessionFromOcr(text: string): ScanSession {
     unit: r.unit ?? "",
     refRange: r.refRange ?? "",
     abnormal: (r.abnormal as ScanAbnormal) ?? "",
-    target: defaultTarget(
-      r.rawName,
-      r.unit ?? "",
-      r.refRange ?? "",
-      r.abnormal ?? "",
-    ),
+    target:
+      matchMetricAlias(r.rawName) ||
+      matchEngAlias(r.engName ?? "") ||
+      defaultTarget(
+        r.rawName,
+        r.unit ?? "",
+        r.refRange ?? "",
+        r.abnormal ?? "",
+      ),
+    ...(r.engName ? { eng: r.engName } : {}),
     ...(r.seq ? { seq: r.seq } : {}),
     ...(r.col !== undefined ? { col: r.col } : {}),
   }));
@@ -828,7 +1361,7 @@ export type ScanRowDraft = {
   itemId: string;
   metric: string;
   value: string;
-  custom?: { name: string; unit: string };
+  custom?: { name: string; unit: string; refRange?: string };
   unitNote?: ScanUnitNote;
   /** 目录指标没有单位而报告有：保存时用报告单位回填目录 */
   fillUnit?: string;
@@ -860,8 +1393,15 @@ export function sessionToRows(
         itemId: item.id,
         metric: "",
         value,
-        /* 新指标的单位入目录前先统一成上标写法（x10~9/L、×10^9/L → ×10⁹/L） */
-        custom: { name: item.name || item.rawName, unit: prettyUnit(item.unit) },
+        /* 新指标的单位入目录前先统一成上标写法（x10~9/L、×10^9/L → ×10⁹/L）；
+           参考区间一并带上，否则下次对不上原件 */
+        custom: {
+          name: item.name || item.rawName,
+          unit: prettyUnit(item.unit),
+          ...(item.refRange.trim()
+            ? { refRange: item.refRange.trim().slice(0, 40) }
+            : {}),
+        },
       });
       continue;
     }

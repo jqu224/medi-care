@@ -19,6 +19,8 @@ export type Metric = {
   unit: string;
   type: "number" | "boolean" | "text" | "bp";
   custom?: boolean;
+  /** 报告上的参考区间（自定义指标从扫描带入） */
+  refRange?: string;
 };
 export type Monitor = {
   id: string;

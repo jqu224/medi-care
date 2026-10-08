@@ -9,18 +9,33 @@ import {
   hammingHex,
   isSimilarScan,
   itemSeqLabels,
+  defaultTarget,
   matchMetricAlias,
+  mergeObservationsBySource,
+  healNarrativeSections,
   normalizeSession,
+  observationSourceRank,
+  scanObservationSource,
   parseOcrLines,
   scanSignature,
   sessionFromLines,
   sessionFromOcr,
+  extractInlineLabs,
+  extractNarrativeSections,
+  looksLikeMedicalRecord,
+  sessionTempsToRows,
   sessionToRows,
   type OcrLine,
   type ScanItem,
   type ScanRecord,
   type ScanSession,
 } from "../src/workspace/scanSession";
+import { md5Base64Bytes } from "../src/workspace/md5";
+import {
+  mediaFormatOf,
+  pushScanToZion,
+  zionMediaFromEnv,
+} from "../src/workspace/zionMedia";
 import {
   aiParse,
   runScanChain,
@@ -49,7 +64,10 @@ function session(items: ScanItem[], patch: Partial<ScanSession> = {}): ScanSessi
     questions: patch.questions ?? [],
     reportDate: patch.reportDate ?? "2026-10-08",
     hospital: patch.hospital ?? "",
+    docType: patch.docType ?? "",
     items,
+    temps: patch.temps ?? [],
+    sections: patch.sections ?? [],
   };
 }
 
@@ -216,6 +234,34 @@ test("region analysis: header anchors split two column groups, footer stays out"
   assert.ok(left.every((x) => x.l.inferred));
   assert.deepEqual(right.map((x) => x.l.label), ["14", "15", "20", "25"]);
   assert.ok(right.every((x) => !x.l.inferred)); // 全部是照片上真实印出的序号
+});
+
+test("table parser picks unit after reference range (app-style columns)", () => {
+  const s = sessionFromLines([
+    L("项目 结果 参考范围 单位", 0, 0, 500, 20),
+    L("游离三碘甲状腺原氨酸 3.12 1.80-4.10 pg/ml FT3", 0, 30, 500, 50),
+    L("游离甲状腺素 1.02 0.81-1.89 ng/dl FT4", 0, 60, 500, 80),
+    L("促甲状腺激素 3.616 0.380-4.340 μIU/mL TSH", 0, 90, 500, 110),
+  ]);
+  const byName = Object.fromEntries(s.items.map((i) => [i.rawName, i]));
+  assert.equal(byName["游离三碘甲状腺原氨酸"].unit, "pg/ml");
+  assert.equal(byName["游离三碘甲状腺原氨酸"].refRange, "1.80-4.10");
+  assert.equal(byName["游离甲状腺素"].unit, "ng/dl");
+  assert.equal(byName["促甲状腺激素"].unit, "μIU/mL");
+});
+
+test("parseOcrLines merges split unit tokens and trailing g/", () => {
+  const rows = parseOcrLines(
+    [
+      "抗甲状腺过氧化物酶 34 <60 pg /ml",
+      "血红蛋白 106 g/ 110-150",
+      "C反应蛋白 121.0 t mg/L 0-8",
+    ].join("\n"),
+  );
+  const byName = Object.fromEntries(rows.map((r) => [r.rawName, r]));
+  assert.equal(byName["抗甲状腺过氧化物酶"].unit, "pg/ml");
+  assert.equal(byName["血红蛋白"].unit, "g/L");
+  assert.equal(byName["C反应蛋白"].unit, "mg/L");
 });
 
 test("glued values, OCR unit variants and ordinal+eng stay attached to the right row", () => {
@@ -441,6 +487,7 @@ test("scan similarity needs same date and overlapping signatures", () => {
 test("normalizeSession sanitizes untrusted vision JSON", () => {
   const s = normalizeSession({
     analysis: "血常规报告",
+    docType: "lab_table",
     questions: [
       { text: "记到哪天？", options: ["08-07", "08-06", "", 3], kind: "date" },
       { text: "", options: ["x"] },
@@ -462,13 +509,350 @@ test("normalizeSession sanitizes untrusted vision JSON", () => {
   });
   assert.equal(s.reportDate, "2024-08-07");
   assert.equal(s.hospital, "");
+  assert.equal(s.docType, "lab_table");
+  assert.equal(s.temps.length, 0);
   assert.equal(s.questions.length, 2);
   assert.equal(s.questions[0].options.length, 2);
   assert.equal(s.items.length, 5);
   assert.deepEqual(
     s.items.map((i) => i.target),
-    ["ferritin", "platelet", "temp", NEW_METRIC, ""],
+    ["ferritin", "platelet", "temp", NEW_METRIC, NEW_METRIC],
   );
+});
+
+test("scan observation source tags and lab_table wins same-day duplicates", () => {
+  assert.equal(scanObservationSource("lab_table"), "扫描·化验单");
+  assert.equal(scanObservationSource("referral"), "扫描·转诊单");
+  assert.equal(scanObservationSource("medical_record"), "扫描·门诊病历");
+  assert.ok(observationSourceRank("扫描·化验单") > observationSourceRank("扫描·转诊单"));
+  assert.ok(observationSourceRank("扫描·化验单") > observationSourceRank("手录"));
+
+  const base = [
+    {
+      id: "1",
+      group: "g-lab",
+      metric: "platelet",
+      value: "215",
+      at: "2024-10-26",
+      source: "扫描·化验单",
+    },
+  ];
+  const fromReferral = [
+    {
+      id: "2",
+      group: "g-ref",
+      metric: "platelet",
+      value: "180",
+      at: "2024-10-26",
+      source: "扫描·转诊单",
+    },
+    {
+      id: "3",
+      group: "g-ref",
+      metric: "ferritin",
+      value: "1500",
+      at: "2024-10-26",
+      source: "扫描·转诊单",
+    },
+  ];
+  const merged = mergeObservationsBySource(base, fromReferral, "g-ref");
+  const plt = merged.find((o) => o.metric === "platelet")!;
+  assert.equal(plt.source, "扫描·化验单");
+  assert.equal(plt.value, "215");
+  assert.ok(merged.some((o) => o.metric === "ferritin" && o.source === "扫描·转诊单"));
+
+  const labWins = mergeObservationsBySource(
+    [{ ...fromReferral[0]!, group: "old" }],
+    [{ ...base[0]!, group: "g-lab" }],
+    "g-lab",
+  );
+  assert.equal(labWins.find((o) => o.metric === "platelet")!.source, "扫描·化验单");
+});
+
+test("normalizeSession fills referral sections from legacy narrative or free titles", () => {
+  const legacy = normalizeSession({
+    docType: "referral",
+    hospital: "京都儿童医院",
+    reportDate: "2014-11-04",
+    narrative: {
+      situation: "间断发热皮疹一月余…",
+      impression: "全身型幼年特发性关节炎可能",
+      transferTo: "风湿免疫科",
+    },
+    items: [{ rawName: "血清铁蛋白", value: "1500", unit: "ng/mL" }],
+  });
+  assert.equal(legacy.docType, "referral");
+  assert.ok(legacy.sections.some((s) => s.title === "转往科室/医院" && s.body.includes("风湿")));
+  assert.equal(legacy.items[0].target, "ferritin");
+
+  const free = normalizeSession({
+    docType: "medical_record",
+    sections: [
+      { title: "入院情况", body: "" },
+      { title: "初步诊断", body: "sJIA" },
+    ],
+  });
+  assert.equal(free.sections.length, 2);
+  assert.equal(free.sections[0].title, "入院情况");
+  assert.equal(free.sections[0].body, "");
+  assert.equal(free.sections[1].body, "sJIA");
+});
+
+test("empty sections[] falls back to narrative like lab items fill the grid", () => {
+  const s = normalizeSession({
+    docType: "medical_record",
+    sections: [],
+    narrative: {
+      chiefComplaint: "发热三天",
+      presentIllness: "司库奇尤 150mg",
+      diagnosis: "sJIA",
+    },
+  });
+  assert.ok(s.sections.some((x) => x.title === "主诉" && x.body === "发热三天"));
+  assert.ok(s.sections.some((x) => x.title === "现病史" && x.body.includes("司库奇尤")));
+  assert.ok(s.sections.some((x) => x.title === "诊断" && x.body === "sJIA"));
+
+  const chinese = normalizeSession({
+    docType: "medical_record",
+    sections: [],
+    主诉: "关节痛",
+    处理: "复诊",
+  });
+  assert.ok(chinese.sections.some((x) => x.title === "主诉" && x.body === "关节痛"));
+
+  const healed = healNarrativeSections(
+    normalizeSession({ docType: "medical_record", sections: [], analysis: "门诊病历" }),
+    "主诉：皮疹\n现病史：激素减量中",
+  );
+  assert.ok(healed.sections.some((x) => x.title === "主诉" && x.body === "皮疹"));
+});
+
+test("MPV is never mapped to platelet and defaults to new custom metric", () => {
+  assert.equal(matchMetricAlias("平均血小板体积"), "");
+  assert.equal(matchMetricAlias("23平均血小板体积MPV"), "");
+  assert.equal(defaultTarget("平均血小板体积MPV"), NEW_METRIC);
+  assert.equal(defaultTarget("平均血小板体积MPV", "fL", "9-13"), NEW_METRIC);
+  const s = normalizeSession({
+    docType: "lab_table",
+    items: [
+      {
+        seq: "23",
+        rawName: "平均血小板体积",
+        engName: "MPV",
+        value: "10.2",
+        unit: "fL",
+        refRange: "9.0-13.0",
+      },
+      { rawName: "血小板", engName: "PLT", value: "215", unit: "×10⁹/L" },
+    ],
+  });
+  const mpv = s.items.find((i) => i.rawName.includes("平均血小板"))!;
+  const plt = s.items.find((i) => i.rawName === "血小板")!;
+  assert.equal(mpv.target, NEW_METRIC);
+  assert.equal(mpv.refRange, "9.0-13.0");
+  assert.equal(plt.target, "platelet");
+  const { rows } = sessionToRows(s);
+  const draft = rows.find((r) => r.custom?.name.includes("平均血小板"))!;
+  assert.equal(draft.custom?.refRange, "9.0-13.0");
+  assert.equal(draft.custom?.unit, "fL");
+});
+
+test("normalizeSession keeps handwritten_temp series and drops fake lab rows", () => {
+  const s = normalizeSession({
+    docType: "handwritten_temp",
+    analysis: "手写体温单",
+    reportDate: "2024-08-01",
+    items: [{ rawName: "噪音", value: "3" }],
+    temps: [
+      { date: "2024-08-01", time: "06:30", celsius: "38.7", note: "" },
+      { date: "2024/8/1", time: "14:00", value: "37.2℃" },
+      { date: "", time: "", celsius: "" },
+    ],
+  });
+  assert.equal(s.docType, "handwritten_temp");
+  assert.equal(s.items.length, 0);
+  assert.equal(s.temps.length, 2);
+  assert.equal(s.temps[0].celsius, "38.7");
+  assert.equal(s.temps[1].date, "2024-08-01");
+  assert.equal(s.temps[1].celsius, "37.2");
+});
+
+test("566f-style medical record extracts inline labs, not narrative noise", () => {
+  const text = `主诉：sJIA复诊
+现病史：司库奇尤 150mg
+辅助检查：2024-10-26 WBC 7.28×10⁹/L; HGB 144g/L; PLT 215×10⁹/L; ALT 10U/L; hsCRP 0.49mg/L; ESR 2mm/h
+诊断：幼年特发性关节炎
+医师签名：`;
+  assert.equal(looksLikeMedicalRecord(text), true);
+  const labs = extractInlineLabs(text);
+  assert.ok(labs.some((r) => r.rawName === "血小板" && r.value === "215"));
+  assert.ok(labs.some((r) => r.rawName === "白细胞" && r.value === "7.28"));
+  assert.ok(labs.some((r) => r.rawName === "血红蛋白" && r.value === "144"));
+  const secs = extractNarrativeSections(text);
+  assert.ok(secs.some((s) => s.title === "主诉" && s.body === "sJIA复诊"));
+  assert.ok(secs.some((s) => s.title === "诊断" && s.body.includes("关节炎")));
+  assert.ok(!secs.some((s) => s.title.includes("医师签名")));
+  const s = sessionFromOcr(text);
+  assert.equal(s.docType, "medical_record");
+  assert.equal(s.reportDate, "2024-10-26");
+  assert.ok(s.items.some((i) => i.target === "platelet" && i.value === "215"));
+  assert.ok(!s.items.some((i) => /主诉|现病史|诊断/.test(i.rawName)));
+  assert.ok(s.sections.some((sec) => sec.title === "主诉"));
+  assert.ok(!s.sections.some((sec) => sec.title === "入院情况"));
+});
+
+test("medical-record sections keep multi-line bodies under each heading", () => {
+  const text = `主诉：sJIA复诊
+现病史：无右臀部痛右髋痛右足跟痛晨僵。双颞颌关节偶酸痛。
+现：司库奇尤 150mg ih Q3W
+既往史和其他病史：同前
+阿达木严重皮疹过敏。
+查体：Wt 45.5kg, 右臀部叩痛，右4字+-，髋内旋 (-)，椎体无
+叩痛，颞下颌 (-)
+辅助检查：2024-10-26 WBC 7.28×10⁹/L; PLT 215×10⁹/L
+诊断：幼年特发性关节炎
+处理：1、复查髋关节MRI
+2、司库奇尤 150mg
+医师签名：张三`;
+  const secs = extractNarrativeSections(text);
+  const by = Object.fromEntries(secs.map((s) => [s.title, s.body]));
+  assert.equal(by["主诉"], "sJIA复诊");
+  assert.match(by["现病史"] ?? "", /司库奇尤 150mg/);
+  assert.match(by["既往史和其他病史"] ?? "", /同前/);
+  assert.match(by["既往史和其他病史"] ?? "", /阿达木严重皮疹过敏/);
+  assert.match(by["查体"] ?? "", /Wt 45\.5kg/);
+  assert.match(by["查体"] ?? "", /颞下颌/);
+  assert.match(by["处理"] ?? "", /复查髋关节MRI/);
+  assert.match(by["处理"] ?? "", /司库奇尤 150mg/);
+  assert.ok(!secs.some((s) => s.title === "现"));
+  assert.ok(!secs.some((s) => s.title.includes("医师签名")));
+});
+
+test("md5Base64 matches Node crypto for Zion Content-MD5", async () => {
+  const { createHash } = await import("node:crypto");
+  const bytes = new TextEncoder().encode("hi");
+  assert.equal(
+    md5Base64Bytes(bytes),
+    createHash("md5").update("hi").digest("base64"),
+  );
+});
+
+test("zionMediaFromEnv defaults to operating backend", () => {
+  assert.equal(mediaFormatOf("image/png"), "PNG");
+  const cfg = zionMediaFromEnv({});
+  assert.ok(cfg?.endpoint.includes("PO76RBe9QQV"));
+  assert.equal(zionMediaFromEnv({ VITE_ZION_UPLOAD: "0" }), null);
+});
+
+test("pushScanToZion presigns, PUTs exact headers, then inserts", async () => {
+  const calls: { url: string; method?: string; headers?: Record<string, string> }[] = [];
+  const blob = new Blob([new Uint8Array([1, 2, 3])], { type: "image/jpeg" });
+  const transport = async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    calls.push({ url, method, headers });
+    if (url.includes("graphql") && method === "POST") {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { query: string };
+      if (body.query.includes("presignedImageListV2")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: {
+              presignedImageListV2: [
+                {
+                  imageId: 99,
+                  uploadUrl: "https://oss.example/put",
+                  uploadHeaders: {
+                    "Content-MD5": "x",
+                    "Content-Type": "image/jpeg",
+                    Date: "1",
+                  },
+                  contentType: "image/jpeg",
+                  downloadUrl: "https://cdn.example/a.jpg",
+                },
+              ],
+            },
+          }),
+        };
+      }
+      if (body.query.includes("insert_scan_record_one")) {
+        assert.match(body.query, /photo_id: 99/);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: { insert_scan_record_one: { id: 7 } },
+          }),
+        };
+      }
+    }
+    if (url === "https://oss.example/put") {
+      assert.deepEqual(headers, {
+        "Content-MD5": "x",
+        "Content-Type": "image/jpeg",
+        Date: "1",
+      });
+      return { ok: true, status: 200, json: async () => ({}) };
+    }
+    throw Error(`unexpected ${method} ${url}`);
+  };
+  const out = await pushScanToZion({
+    config: { endpoint: "https://zion.example/graphql" },
+    blob,
+    engine: "manual",
+    session: session([], {
+      docType: "medical_record",
+      reportDate: "2024-10-26",
+      hospital: "测试",
+      analysis: "门诊病历",
+    }),
+    transport: transport as typeof fetch,
+  });
+  assert.deepEqual(out, {
+    recordId: 7,
+    imageId: 99,
+    downloadUrl: "https://cdn.example/a.jpg",
+  });
+  assert.equal(calls.filter((c) => c.url === "https://oss.example/put").length, 1);
+});
+
+test("scanSignature includes handwritten temp points", () => {
+  const sig = scanSignature(
+    session([], {
+      docType: "handwritten_temp",
+      reportDate: "2024-08-01",
+      temps: [
+        { id: "a", date: "2024-08-01", time: "6:30", celsius: "38.7", note: "" },
+        { id: "b", date: "", time: "", celsius: "37.1", note: "" },
+      ],
+    }),
+  );
+  assert.deepEqual(sig, [
+    "temp=37.1@2024-08-01",
+    "temp=38.7@2024-08-01T06:30",
+  ]);
+});
+
+test("sessionTempsToRows builds dated temp observations", () => {
+  const { rows, error } = sessionTempsToRows(
+    session([], {
+      docType: "handwritten_temp",
+      reportDate: "2024-08-01",
+      temps: [
+        { id: "a", date: "2024-08-01", time: "6:30", celsius: "38.7", note: "" },
+        { id: "b", date: "", time: "14:00", celsius: "37.1", note: "" },
+        { id: "c", date: "2024-08-02", time: "", celsius: "36.8", note: "" },
+        { id: "d", date: "2024-08-02", time: "10:00", celsius: "99", note: "" },
+      ],
+    }),
+  );
+  assert.match(error, /10:00|99/);
+  assert.deepEqual(rows, [
+    { at: "2024-08-01T06:30", value: "38.7" },
+    { at: "2024-08-01T14:00", value: "37.1" },
+    { at: "2024-08-02", value: "36.8" },
+  ]);
 });
 
 test("sessionToRows validates values and expands custom metrics", () => {
@@ -484,6 +868,25 @@ test("sessionToRows validates values and expands custom metrics", () => {
   assert.equal(ok.rows.length, 2);
   assert.deepEqual(ok.rows[0], { itemId: "a", metric: "ferritin", value: "980" });
   assert.deepEqual(ok.rows[1].custom, { name: "游离三碘甲状腺原氨酸", unit: "pmol/L" });
+
+  const corrected = sessionToRows(
+    session([
+      item({
+        id: "e",
+        rawName: "甲状腺过氧化物酶抗体",
+        name: "甲状腺过氧化物酶抗体",
+        target: NEW_METRIC,
+        value: "34",
+        unit: "IU/mL",
+        refRange: "<60 IU/ml",
+      }),
+    ]),
+  );
+  assert.deepEqual(corrected.rows[0].custom, {
+    name: "甲状腺过氧化物酶抗体",
+    unit: "IU/mL",
+    refRange: "<60 IU/ml",
+  });
 
   const bad = sessionToRows(
     session([item({ id: "a", rawName: "体温", target: "temp", value: "38.6℃" })]),

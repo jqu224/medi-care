@@ -863,7 +863,7 @@ export default function Workspace() {
                     onClick={() => setTodoOpen(!todoOpen)}
                   >
                     <strong>{todos.length}</strong>
-                    <span>To do</span>
+                    <span>下一步 todo</span>
                     <ArrowRight size={17} />
                   </button>
                   <span>
