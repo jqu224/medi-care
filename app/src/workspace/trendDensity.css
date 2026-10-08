@@ -13,16 +13,27 @@
   grid-template-columns:repeat(auto-fit,minmax(min(100%,var(--trend-card-width)),1fr));
   gap:14px; min-width:0; margin:0; align-items:start;
 }
+/* One compact row: 时间维度 dropdown left, 病种筛选 and chart size right, exact window below. */
+.workspace .density-workbench .range-bar {
+  grid-column:1/-1; grid-row:1;
+  display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px;
+  padding:8px 12px; border:1px solid var(--line); border-radius:10px; background:#fafbfb;
+}
+.range-picker { display:flex; align-items:center; gap:8px; min-width:0; }
+.range-bar-label { font-size:12px; color:#435b51; white-space:nowrap; }
+.workspace .density-workbench .range-picker select { width:auto; min-width:158px; max-width:100%; min-height:44px; font-size:13px; }
+/* 病种筛选紧跟时间维度；图表大小靠右收边。 */
+.workspace .density-workbench .range-bar > select { width:180px; max-width:100%; min-height:44px; }
+.workspace .density-workbench .range-bar .graph-scale-control { margin-left:auto; }
+.range-window { width:100%; font-size:11px; color:#5d6d69; font-variant-numeric:tabular-nums; }
 .workspace .density-workbench .calendar-shell {
   width:100%; max-width:none; margin:0; padding:12px;
   border:1px solid var(--line); border-radius:12px; background:white;
 }
-.workspace .density-workbench .filter-row {
-  grid-column:1/-1; grid-row:1; padding:8px 12px; border:1px solid var(--line);
-  border-radius:10px; background:#fafbfb; gap:12px; margin:0;
-}
-.workspace .density-workbench .filter-row select { width:180px; max-width:100%; min-height:44px; }
-.workspace .density-workbench .filter-row > small { width:auto; margin-left:auto; }
+.workspace .density-workbench .calendar-toolbar { gap:4px; }
+.workspace .density-workbench .calendar-toolbar .segmented { width:108px; flex-basis:108px; }
+.workspace .density-workbench .calendar-navigation > button { flex-basis:40px; min-width:40px; }
+.workspace .density-workbench .calendar-navigation .calendar-date-title { min-width:76px; }
 .graph-scale-control { display:flex; align-items:center; gap:10px; min-height:44px; font-size:12px; color:#435b51; }
 .workspace .graph-scale-control input[type=range] { width:120px; min-width:80px; height:44px; margin:0; padding:0; border:0; background:transparent; cursor:ew-resize; accent-color:#146b60; }
 .graph-scale-control output { min-width:28px; font-size:11px; color:#5d6d69; }
@@ -31,10 +42,6 @@
 .workspace .density-workbench .section-head { margin-bottom:8px; gap:8px; }
 .workspace .density-workbench .section-head h2 { font-size:15px; }
 .workspace .density-workbench .section-head p { font-size:11px; }
-.workspace .density-workbench .calendar-toolbar { gap:4px; }
-.workspace .density-workbench .calendar-toolbar .segmented { width:108px; flex-basis:108px; }
-.workspace .density-workbench .calendar-navigation > button { flex-basis:40px; min-width:40px; }
-.workspace .density-workbench .calendar-navigation .calendar-date-title { min-width:76px; }
 .trend-period-summary { margin-top:12px; padding:14px; border:1px solid var(--line); border-radius:12px; background:white; }
 .trend-period-summary small { font-size:11px; color:#5d6d69; }
 .trend-summary-counts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:14px 0; }
@@ -55,12 +62,13 @@
  .workspace .density-workbench > .trend-grid { grid-column:1; }
 }
 @media(max-width:767px) {
- .workspace .density-workbench .filter-row { gap:4px 10px; }
- .workspace .density-workbench .filter-row select { width:132px; }
- .graph-scale-control { flex:1; gap:5px; font-size:11px; }
+ .workspace .density-workbench .range-bar { gap:8px; padding:8px 10px; }
+ .range-picker { flex:1 1 100%; }
+ .workspace .density-workbench .range-picker select { flex:1; width:auto; min-width:0; }
+ .workspace .density-workbench .range-bar > select { flex:1; width:auto; min-width:0; }
+ .graph-scale-control { flex:1; gap:5px; font-size:11px; margin-left:auto; }
  .workspace .graph-scale-control input[type=range] { width:65px; min-width:45px; flex:1; }
  .graph-scale-control output { display:none; }
- .workspace .density-workbench .filter-row > small { width:100%; margin:0; }
 }
 
 /* Empty series stay discoverable without competing with measured data. */

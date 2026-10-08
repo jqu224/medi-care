@@ -12,18 +12,22 @@ import { symptomScales, symptomValue, type SymptomKey } from "./symptoms";
 export default function SymptomTrend({
   id,
   rows,
+  labelOf,
+  note = "",
 }: {
   id: SymptomKey;
   rows: Observation[];
+  labelOf?: (at: string) => string;
+  note?: string;
 }) {
   const scale = symptomScales[id];
   return (
     <div className="symptom-trend">
-      <p>自评分级 · 0–3 档，不代表临床严重程度</p>
+      <p>自评分级 · 0–3 档，不代表临床严重程度{note ? ` · ${note}` : ""}</p>
       <ResponsiveContainer width="100%" height={220}>
         <LineChart
           data={rows.map((o) => ({
-            date: o.at.slice(5).replace("T", " "),
+            date: labelOf ? labelOf(o.at) : o.at.slice(5).replace("T", " "),
             degree: o.symptom?.severity ?? null,
             label: symptomValue(o),
           }))}

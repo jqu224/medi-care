@@ -1,0 +1,20 @@
+Brand wordmark fonts (bundled in this folder)
+==============================================
+
+The "MediCare 迈迪克" wordmark uses two open-source fonts, both under the
+SIL Open Font License 1.1 - free for commercial use, modification and
+redistribution, including subsetting and woff2 conversion:
+
+1) Fraunces (Italic, SemiBold) - Latin wordmark "MediCare"
+   Copyright 2020 The Fraunces Project Authors
+   https://github.com/undercasetype/Fraunces
+   File: fraunces-600-italic-medicare.woff2 (subset: "MediCare" glyphs only)
+
+2) Ma Shan Zheng 马善政毛笔楷书 (Regular) - Chinese wordmark "迈迪克"
+   Copyright 2018 The MaShanZheng Project Authors
+   https://github.com/googlefonts/mashanzheng
+   File: ma-shan-zheng-maidike.woff2 (subset: "迈迪克" glyphs only)
+
+License: SIL Open Font License, Version 1.1 - full text in OFL.txt.
+The files above are unmodified glyph outlines; only character subsetting and
+woff2 packaging were applied, as permitted by the license.

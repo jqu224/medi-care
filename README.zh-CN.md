@@ -1,5 +1,5 @@
 <div align="center">
-<img src="docs/assets/hero.svg" width="100%" alt="Medi-care — 罕见病照护里可解释的趋势提醒" />
+<img src="docs/assets/hero.svg" width="100%" alt="MediCare — 罕见病照护里可解释的趋势提醒" />
 </div>
 
 <div align="center">

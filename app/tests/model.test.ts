@@ -4,7 +4,10 @@ import {
   actorFor,
   allowedPatients,
   alertsFor,
+  bucketEnd,
+  bucketKey,
   commit,
+  isTrendRange,
   KEY,
   loadDatabase,
   mutatePatient,
@@ -12,8 +15,11 @@ import {
   seedDatabase,
   seriesFor,
   togglePlan,
+  trendFull,
+  trendRange,
+  trendTick,
 } from "../src/workspace/model";
-import { todayISO } from "../src/lib/date";
+import { todayISO, addDaysISO } from "../src/lib/date";
 function memory() {
   const data = new Map<string, string>();
   return {
@@ -60,11 +66,13 @@ test("daily observations append, shared metrics remain single source", () => {
     at: todayISO() + "T18:00",
     value: "39",
   });
-  assert.equal(seriesFor(p, "temp", todayISO(), todayISO(), "日").length, 2);
-  assert.equal(
-    seriesFor(p, "temp", todayISO(), todayISO(), "周")[0].value,
-    "39",
-  );
+  // 单日窗口保留这一天的每条原始记录，画出一日内的变化。
+  assert.equal(seriesFor(p, "temp", todayISO(), todayISO(), "日").rows.length, 2);
+  // 跨天窗口一天一个点，体温取当天最高（这里同一天两条，取 39）。
+  const span = seriesFor(p, "temp", addDaysISO(todayISO(), -1), todayISO(), "周");
+  assert.equal(span.grain, "日");
+  assert.equal(span.rows[0].value, "39");
+  assert.equal(p.observations.filter((o) => o.at.startsWith(todayISO())).length, 2);
   assert.ok(p.monitors.every((m) => m.metrics.includes("temp")));
 });
 test("date periods handle year boundary and leap February", () => {
@@ -77,14 +85,98 @@ test("date periods handle year boundary and leap February", () => {
     "2024-02-29",
   ]);
 });
+test("trend windows anchor calendar weeks and roll the longer ranges up to today", () => {
+  assert.deepEqual(trendRange("本周", "2026-10-08"), ["2026-10-05", "2026-10-08"]);
+  assert.deepEqual(trendRange("本周", "2026-10-05"), ["2026-10-05", "2026-10-05"]);
+  assert.deepEqual(trendRange("本周", "2027-01-01"), ["2026-12-28", "2027-01-01"]);
+  assert.deepEqual(trendRange("本月", "2026-10-08"), ["2026-10-01", "2026-10-08"]);
+  assert.deepEqual(trendRange("近 90 天", "2026-10-08"), ["2026-07-11", "2026-10-08"]);
+  assert.deepEqual(trendRange("近 180 天", "2026-10-08"), ["2026-04-12", "2026-10-08"]);
+  assert.deepEqual(trendRange("近 365 天", "2026-10-08"), ["2025-10-09", "2026-10-08"]);
+  assert.deepEqual(trendRange("全部", "2026-10-08", "2025-03-04"), ["2025-03-04", "2026-10-08"]);
+  assert.deepEqual(trendRange("全部", "2026-10-08"), ["2026-10-08", "2026-10-08"]);
+  assert.deepEqual(trendRange("全部", "2026-10-08", "2027-01-01"), ["2026-10-08", "2026-10-08"]);
+  assert.equal(isTrendRange("近 365 天"), true);
+  assert.equal(isTrendRange("近 1 年"), false);
+});
+test("week and month grains keep one point per period, choosing the right value", () => {
+  const p = seedDatabase().patients[0];
+  const base = p.observations[0];
+  const rows = [
+    { ...base, id: "a", metric: "temp", value: "37.2", at: "2026-10-05T08:00" },
+    { ...base, id: "b", metric: "temp", value: "39.1", at: "2026-10-07T20:00" },
+    { ...base, id: "c", metric: "temp", value: "36.6", at: "2026-10-08T08:00" },
+    { ...base, id: "d", metric: "temp", value: "38.4", at: "2026-10-12T08:00" },
+  ];
+  p.observations = rows;
+  const weekly = seriesFor(p, "temp", "2026-10-01", "2026-10-31", "周");
+  assert.equal(weekly.grain, "周");
+  assert.deepEqual(weekly.rows.map((o) => o.id), ["b", "d"]);
+  assert.equal(bucketKey("2026-10-11T09:00", "周"), "2026-10-05");
+  assert.equal(bucketKey("2026-10-11T09:00", "月"), "2026-10");
+  assert.equal(bucketEnd("2026-10", "月"), "2026-10-31");
+  p.observations = [
+    { ...base, id: "w1", metric: "weight", value: "23.0", at: "2026-10-05T08:00" },
+    { ...base, id: "w2", metric: "weight", value: "23.6", at: "2026-10-07T08:00" },
+  ];
+  // 两天都在 10 月同一周里：月粒度只剩一个点，自动细化到日，两条都保留。
+  const both = seriesFor(p, "weight", "2026-10-01", "2026-10-31", "月");
+  assert.equal(both.grain, "日");
+  assert.deepEqual(both.rows.map((o) => o.id), ["w1", "w2"]);
+  // 同一天多次体重只留最后一次，体温则留最高。
+  p.observations.push({
+    ...base,
+    id: "w3",
+    metric: "weight",
+    value: "23.8",
+    at: "2026-10-07T20:00",
+  });
+  const daily = seriesFor(p, "weight", "2026-10-01", "2026-10-31", "日");
+  assert.deepEqual(daily.rows.map((o) => o.id), ["w1", "w3"]);
+  assert.equal(trendTick("2026-10-07T20:00", "日", 7), "10-07");
+  assert.equal(trendTick("2026-10-07T20:00", "日", 800), "26-10-07");
+  assert.equal(trendTick("2026-10-07T20:00", "周", 30), "10-05");
+  assert.equal(trendTick("2026-10-07T20:00", "周", 800), "26-10-05");
+  assert.equal(trendTick("2026-10-07T20:00", "月", 365), "2026-10");
+  assert.equal(trendFull("2026-10-07T20:00", "周"), "10-05 至 10-11（周）");
+  assert.equal(trendFull("2026-10-07T20:00", "月"), "2026年10月");
+  // 单日窗口给时刻，多日窗口给日期。
+  assert.equal(trendFull("2026-10-07T20:30", "日", 1), "20:30");
+  assert.equal(trendTick("2026-10-07T20:30", "日", 1), "20:30");
+  assert.equal(trendFull("2026-10-07T20:30", "日", 30), "2026-10-07 20:30");
+});
+test("a window too short for the chosen grain falls back until a trend is drawable", () => {
+  const p = seedDatabase().patients[0];
+  const base = p.observations[0];
+  p.observations = [
+    { ...base, id: "m1", metric: "weight", value: "23.0", at: "2026-10-05T08:00" },
+    { ...base, id: "m2", metric: "weight", value: "23.4", at: "2026-10-06T08:00" },
+  ];
+  // 同一周两个点：月粒度只剩一个周期，一路细化到日。
+  const sameWeek = seriesFor(p, "weight", "2026-10-05", "2026-10-08", "月");
+  assert.equal(sameWeek.grain, "日");
+  assert.deepEqual(sameWeek.rows.map((o) => o.id), ["m1", "m2"]);
+  // 跨两周只落一个月的窗口：月粒度只掉一级到周。
+  p.observations.push({ ...base, id: "m3", metric: "weight", value: "23.9", at: "2026-10-14T08:00" });
+  const twoWeeks = seriesFor(p, "weight", "2026-10-05", "2026-10-20", "月");
+  assert.equal(twoWeeks.grain, "周");
+  assert.deepEqual(twoWeeks.rows.map((o) => o.id), ["m2", "m3"]);
+  // 跨两个月的窗口保留用户选的月粒度。
+  p.observations.push({ ...base, id: "m4", metric: "weight", value: "24.2", at: "2026-08-03T08:00" });
+  const monthly = seriesFor(p, "weight", "2026-08-01", "2026-10-31", "月");
+  assert.equal(monthly.grain, "月");
+  assert.deepEqual(monthly.rows.map((o) => o.id), ["m4", "m3"]);
+  // 没有任何记录时保持为空，不编造趋势。
+  assert.equal(seriesFor(p, "weight", "2026-11-01", "2026-11-30", "月").rows.length, 0);
+});
 test("glucose contexts and empty periods do not fabricate data", () => {
   const p = seedDatabase().patients[1];
   assert.equal(
-    seriesFor(p, "glucose", "2020-01-01", "2020-01-31", "月").length,
+    seriesFor(p, "glucose", "2020-01-01", "2020-01-31", "月").rows.length,
     0,
   );
   assert.equal(
-    seriesFor(p, "glucose", "2020-01-01", "2030-01-01", "月", "餐后").length,
+    seriesFor(p, "glucose", "2020-01-01", "2030-01-01", "月", "餐后").rows.length,
     0,
   );
 });
@@ -211,7 +303,7 @@ test("moving October to November synchronizes the month selection and data windo
   patient.observations = patient.observations
     .slice(0, 1)
     .map((o) => ({ ...o, metric: "temp", value: "37", at: "2026-10-31" }));
-  assert.deepEqual(seriesFor(patient, "temp", start, end, "月", ""), []);
+  assert.deepEqual(seriesFor(patient, "temp", start, end, "月", "").rows, []);
 });
 
 import { summarizeHistory } from "../src/workspace/historySummary";
@@ -319,3 +411,6 @@ test("symptom impacts, rash locations and notes survive persistence without rewr
 
 // Keep record-follow-up coverage in the standard test run.
 import './careTodos.test';
+
+// Scan record entry follows the same chained test run.
+import './scan.test';

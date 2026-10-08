@@ -1,3 +1,23 @@
+/* 品牌字标字体：Fraunces（斜体衬线）+ 马善政毛笔楷书，均为 SIL OFL 1.1，
+   仅嵌入字标所需字形；unicode-range 限定作用范围，不会扩散到正文。
+   许可全文见 public/fonts/OFL.txt，字体清单见 public/fonts/FONTS-LICENSE.txt。 */
+@font-face {
+  font-family: "Fraunces Wordmark";
+  font-style: italic;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/fraunces-600-italic-medicare.woff2") format("woff2");
+  unicode-range: U+43, U+4d, U+61, U+64-65, U+69, U+72;
+}
+@font-face {
+  font-family: "Ma Shan Zheng Wordmark";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/ma-shan-zheng-maidike.woff2") format("woff2");
+  unicode-range: U+514b, U+8fc8, U+8fea;
+}
+
 .workspace,
 .entry {
   --paper: #f8f7f3;
@@ -68,14 +88,6 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 25px;
-  font-weight: 700;
-  letter-spacing: 1px;
-}
-.brand small {
-  font-size: 10px;
-  letter-spacing: 3px;
-  margin-left: 8px;
 }
 .brand-icon {
   width: 40px;
@@ -2297,10 +2309,13 @@ button:disabled {
 /* Full-width identity header; patient dates share one desktop column heading. */
 .workspace { --header-height:72px; }
 .workspace .app-header { position:fixed; inset:0 0 auto; height:var(--header-height); padding:0 24px 0 16px; margin:0; background:#172b28; border:0; border-bottom:2px solid #8dd5ba; color:#fff; z-index:45; display:flex; gap:24px; }
-.header-brand { display:flex; align-items:center; gap:10px; width:170px; flex-shrink:0; }
+.header-brand { display:flex; align-items:center; gap:10px; width:196px; flex-shrink:0; }
 .brand-mark { width:38px; height:38px; flex-shrink:0; }
-.brand-wordmark { font-size:21px; font-weight:650; letter-spacing:.08em; line-height:1.3; white-space:nowrap; }
-.brand-wordmark small, .brand .brand-wordmark small { display:block; font-size:10px; font-weight:500; letter-spacing:.1em; margin:2px 0 0; }
+/* 字标：英文斜体在前、中文毛笔楷书在后，同一基线单行。font-synthesis:none 防止
+   浏览器对单字重子集字体做伪加粗，破坏笔触。 */
+.brand-wordmark { display:inline-flex; align-items:baseline; gap:.3em; white-space:nowrap; line-height:1.2; font-size:18px; font-synthesis:none; }
+.brand-latin { font-family:"Fraunces Wordmark", Fraunces, Georgia, "Times New Roman", serif; font-style:italic; font-weight:600; letter-spacing:.005em; color:#f7fcfa; }
+.brand-han { font-family:"Ma Shan Zheng Wordmark", "Ma Shan Zheng", "Kaiti SC", STKaiti, KaiTi, serif; font-weight:400; font-size:1.04em; letter-spacing:.02em; color:#9be1c6; }
 .workspace .app-header .workspace-title { color:#fff; font-size:15px; flex:1; }
 .workspace .app-header .workspace-title > span { color:#bbd0c9; }
 .workspace .app-header .top-actions { margin-left:auto; gap:12px; }
@@ -2312,6 +2327,9 @@ button:disabled {
 .workspace .sidebar { top:var(--header-height); padding-top:18px; }
 .workspace .main, .workspace.doctor .main { padding-top:calc(var(--header-height) + 4px); }
 .entry > .brand { color:#173f34; }
+.entry > .brand .brand-wordmark { font-size:26px; }
+.entry > .brand .brand-latin { color:#173f34; }
+.entry > .brand .brand-han { color:#146b60; }
 .entry > .brand .brand-mark { background:#172b28; border-radius:7px; padding:3px; }
 .main > .patient-list .patient-item > div.patient-row-data { grid-template-columns:minmax(150px,1.5fr) minmax(100px,1fr) minmax(72px,.6fr) minmax(90px,.8fr) minmax(60px,.5fr); }
 .main > .patient-list .patient-table-head { grid-template-columns:minmax(150px,1.5fr) minmax(100px,1fr) minmax(72px,.6fr) minmax(90px,.8fr) minmax(60px,.5fr); gap:20px; padding-left:66px; padding-right:52px; }
@@ -2322,7 +2340,7 @@ button:disabled {
 .patient-row-data time { font-variant-numeric:tabular-nums; }
 .sidebar .patient-first, .sidebar .patient-span { display:none; }
 .sidebar .patient-last em { display:inline; margin-right:5px; }
-@media(min-width:1024px) { .doctor .header-brand { width:242px; } }
+@media(min-width:1024px) { .doctor .header-brand { width:268px; } }
 @media(min-width:768px) and (max-width:1023px) {
  .workspace .mobile-nav { top:var(--header-height); }
  .workspace .main, .workspace.doctor .main { padding-top:calc(var(--header-height) + 64px); }
@@ -2333,8 +2351,8 @@ button:disabled {
  .workspace .app-header { padding:0 12px; gap:8px; }
  .header-brand { width:auto; gap:6px; }
  .brand-mark { width:30px; height:30px; }
- .brand-wordmark { font-size:16px; }
- .brand-wordmark small { font-size:9px; }
+ .brand-wordmark { font-size:15px; }
+ .brand-han { font-size:1.02em; }
  .workspace .app-header .workspace-title { display:none; }
  .workspace .app-header .top-actions { gap:6px; }
  .workspace .app-header .top-actions > button, .workspace .app-header .account-menu > summary { gap:4px; padding:0 6px; font-size:11px; }
@@ -2499,4 +2517,206 @@ button:disabled {
  .records-flow { grid-template-columns:1fr 1fr; gap:6px; padding-bottom:12px; }
  .metric-pill-label { min-width:76px; padding:8px 8px 8px 9px; }
  .metric-pill-body strong b { font-size:15px; }
+}
+
+/* ===== 扫描录入 ===== */
+/* 对话框永不宽于视口：只允许纵向滚动，栅格轨道全部可收缩（minmax(0,…)），
+   避免内容 min-content（大图、输入框固有宽度）把模态撑出横向滚动 */
+.scan-modal {
+  width: min(980px, calc(100vw - 36px));
+  max-width: calc(100vw - 36px);
+  min-width: 0;
+  overflow: auto;
+}
+.scan-confirm, .scan-detail { grid-template-columns:minmax(0,2fr) minmax(0,3fr); }
+.scan-confirm > *, .scan-detail > *, .scan-side, .scan-photo { min-width:0; }
+.scan-analysis, .scan-question p, .scan-linked { overflow-wrap:anywhere; }
+.scan-pick { display:grid; gap:12px; }
+.scan-file { display:grid; place-items:center; min-height:180px; border:1px dashed #b9cdc3; border-radius:12px; background:#f7f9f9; overflow:hidden; cursor:pointer; }
+.scan-file input[type="file"] { position:absolute; width:1px; height:1px; opacity:0; }
+.scan-file img { max-width:100%; max-height:320px; object-fit:contain; }
+.scan-file-hint { padding:40px 16px; color:#5d6d69; font-size:13px; }
+.scan-actions { display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
+.scan-parsing { display:grid; gap:12px; place-items:center; padding:24px 0; }
+.scan-parsing img { max-width:100%; max-height:260px; object-fit:contain; border-radius:10px; }
+.scan-parsing p { color:#5d6d69; font-size:13px; }
+.scan-confirm { display:grid; gap:16px; align-items:start; }
+/* 放大对照：编辑对话框加宽、左栏占比加大，右侧表格照常可编辑 */
+.scan-modal.is-photo-big { width:min(1420px, calc(100vw - 36px)); max-width:calc(100vw - 36px); }
+.scan-confirm.is-photo-big { grid-template-columns:minmax(0,11fr) minmax(0,9fr); }
+.scan-photo { position:sticky; top:0; display:grid; gap:6px; }
+.scan-photo small { color:#5d6d69; font-size:11px; text-align:center; }
+/* 可缩放/可拖动的原件视图 */
+.photo-box { position:relative; overflow:hidden; border:1px solid #e5e7de; border-radius:10px; background:#fff; display:grid; place-items:center; min-height:160px; touch-action:none; }
+.photo-box img { width:100%; max-width:100%; max-height:60vh; object-fit:contain; min-width:0; user-select:none; transition:transform .12s ease-out; }
+.photo-box:not(.is-zoomed) { cursor:zoom-in; }
+.photo-box.is-zoomed { cursor:grab; }
+.photo-box.is-zoomed:active { cursor:grabbing; }
+.photo-box.is-zoomed img { transition:none; }
+.photo-box.is-big img { max-height:70vh; }
+.photo-tools { position:absolute; top:8px; right:8px; display:flex; gap:4px; padding:4px; border-radius:10px; background:rgba(255,255,255,.92); border:1px solid #e5e7de; box-shadow:0 2px 8px rgba(23,63,52,.1); }
+.photo-tools button { width:32px; height:32px; min-height:32px; display:grid; place-items:center; border:0; border-radius:8px; background:none; color:#314c42; cursor:pointer; }
+.photo-tools button:hover:not(:disabled), .photo-tools button:focus-visible { background:#eef4f1; color:#146b60; }
+.photo-tools button:disabled { opacity:.35; cursor:default; }
+.scan-side { display:grid; gap:12px; min-width:0; }
+.scan-meta { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.scan-engine { padding:2px 10px; border-radius:999px; background:#e7f0ea; color:#174e3b; font-size:12px; font-weight:600; }
+.scan-meta small { color:#8a4b08; font-size:12px; }
+.scan-analysis { margin:0; padding:10px 12px; border-radius:10px; background:#f7f9f9; font-size:13px; line-height:1.5; }
+.scan-questions { display:grid; gap:10px; }
+.scan-question { display:grid; gap:8px; padding:10px 12px; border:1px solid #e7c48a; border-radius:10px; background:#fffaf2; }
+.scan-question p { margin:0; font-size:13px; font-weight:600; color:#6b4a10; }
+.scan-options { display:flex; flex-wrap:wrap; gap:8px; }
+.scan-options button { min-height:38px; padding:8px 14px; border:1px solid #d9e3dd; border-radius:999px; background:#fff; font-size:13px; cursor:pointer; }
+.scan-options button:hover, .scan-options button:focus-visible { border-color:#146b60; color:#146b60; }
+.scan-options button.ghost { border-style:dashed; color:#5d6d69; }
+/* 逐行审查模式：工具条固定在明细上方；当前行绿框提亮，已确认行降透明度 + 打勾 */
+.scan-review { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 10px; border:1px solid #d9e3dd; border-radius:12px; background:#f4f8f6; }
+.scan-review.is-on { border-color:#8cc7b0; background:#eaf5f0; }
+.scan-review-toggle { display:inline-flex; align-items:center; gap:6px; min-height:36px; padding:6px 12px; border:1px solid #d9e3dd; border-radius:999px; background:#fff; color:#174e3b; font-size:13px; font-weight:600; cursor:pointer; }
+.scan-review-toggle[aria-pressed="true"] { border-color:#146b60; background:#146b60; color:#fff; }
+.scan-review-pos { color:#314c42; font-size:12px; }
+.scan-review-pos b { font-variant-numeric:tabular-nums; }
+.scan-review-nav { display:flex; gap:6px; margin-left:auto; }
+.scan-review-nav button { display:inline-flex; align-items:center; gap:4px; min-height:36px; padding:6px 12px; border:1px solid #d9e3dd; border-radius:999px; background:#fff; color:#174e3b; font-size:12px; cursor:pointer; }
+.scan-review-nav button:hover:not(:disabled) { border-color:#146b60; }
+.scan-review-nav button:disabled { opacity:.4; cursor:default; }
+.scan-item.is-review { opacity:.5; transition:opacity .15s, box-shadow .15s; }
+.scan-item.is-review.is-reviewed { opacity:.72; }
+.scan-item.is-review.is-current { opacity:1; box-shadow:inset 3px 0 0 #146b60; }
+.scan-item.is-current { position:relative; }
+/* 审查模式下当前行的「确认本行」按钮：整行最后，不挤占值列 */
+.scan-review-ok { grid-column:1 / -1; justify-self:end; display:inline-flex; align-items:center; gap:6px; min-height:36px; margin-top:2px; padding:6px 14px; border:1px solid #146b60; border-radius:999px; background:#146b60; color:#fff; font-size:12px; font-weight:600; cursor:pointer; }
+.scan-review-ok:hover, .scan-review-ok:focus-visible { background:#0f5549; }
+.scan-item.is-reviewed .scan-review-ok { background:#e7f0ea; border-color:#8cc7b0; color:#146b60; }
+.scan-items { display:grid; gap:8px; border:1px solid #e5e7de; border-radius:12px; padding:10px 12px; background:#fff; min-width:0; }
+.scan-items-head { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1.2fr) minmax(0,.9fr) 34px; gap:8px; font-size:11px; color:#5d6d69; padding-bottom:2px; border-bottom:1px solid #e5e7de; }
+.scan-item { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1.2fr) minmax(0,.9fr) 34px; grid-template-areas:"raw target value del"; gap:8px; align-items:center; padding:6px 0; border-bottom:1px dashed #eef0ea; }
+.scan-raw { grid-area:raw; }
+.scan-target { grid-area:target; }
+.scan-value { grid-area:value; display:grid; gap:2px; min-width:0; }
+.scan-remove { grid-area:del; }
+/* 选中「新建自定义指标」的行：红框 + 浅红底 + 徽标，用户一眼看到哪些行会建新指标 */
+.scan-item.is-new { background:#fff6f6; border:1.5px solid #d94a56; border-radius:10px; padding:8px; border-bottom:1.5px solid #d94a56; }
+.scan-item.is-new .scan-target select { border-color:#d94a56; }
+.scan-item.is-new .scan-target select:focus { outline:2px solid #d94a56; outline-offset:1px; }
+.scan-new-badge { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:999px; background:#b42332; color:#fff; font-size:10px; font-weight:600; vertical-align:1px; }
+/* 行编号（与原件逐行对照）：印刷序号实底，推断序号虚线弱化，避免混为原件印的号 */
+.scan-seq { display:inline-block; min-width:18px; margin-right:6px; padding:0 5px; border-radius:6px; background:#e7f0ea; color:#174e3b; font-size:10px; font-weight:700; font-variant-numeric:tabular-nums; text-align:center; vertical-align:1px; }
+.scan-seq.is-inferred { background:transparent; border:1px dashed #b9cdc3; color:#5d6d69; font-weight:600; }
+.scan-item { padding:6px 0; border-bottom:1px dashed #eef0ea; }
+.scan-item:last-of-type { border-bottom:0; }
+.scan-raw { display:grid; gap:2px; min-width:0; }
+.scan-raw strong { font-size:13px; font-weight:600; color:#243d35; overflow:hidden; text-overflow:ellipsis; }
+.scan-raw small { font-size:10px; color:#5d6d69; }
+.scan-raw .up, .scan-readout .up, .scan-table .up { color:#a65309; font-weight:700; margin-right:2px; }
+.scan-raw .down, .scan-readout .down, .scan-table .down { color:#b42332; font-weight:700; margin-right:2px; }
+.scan-raw .scan-eng { margin-left:6px; font-style:normal; font-size:11px; color:#5d6d69; font-weight:600; letter-spacing:.02em; }
+.scan-item select, .scan-item input { width:100%; min-width:0; min-height:40px; padding:7px 9px; border:1px solid #d9e3dd; border-radius:8px; background:#fff; font-size:13px; }
+.scan-target { display:grid; gap:6px; min-width:0; }
+/* 新建指标：单输入框 + 小型「改选」，不再 select 与输入框上下重复 */
+.scan-item.is-new .scan-target { grid-template-columns:minmax(0,1fr) auto; align-items:center; }
+.scan-item .scan-custom-name { min-height:36px; font-size:12px; border-color:#d94a56; }
+.scan-item .scan-custom-name:focus { outline:2px solid #d94a56; outline-offset:1px; }
+.scan-repick { min-height:36px; padding:6px 10px; border:1px solid #e8b7bc; border-radius:8px; background:#fff; color:#b42332; font-size:12px; cursor:pointer; }
+.scan-repick:hover, .scan-repick:focus-visible { background:#fff0f1; }
+/* 单位对齐 chip：橙=将按倍数换算入库，如「数值乘以 100 换算入库（原图 ×10¹¹/L → 目录 ×10⁹/L）」；
+   灰=单位未核对；红=不一致会阻止保存。换算说明是整句，表单里让它独占行，不从窄的值列折成小方块 */
+.scan-unit-chip { display:inline-block; padding:1px 7px; border-radius:999px; font-size:10px; font-weight:600; }
+.scan-unit-chip.convert { background:#fff0da; color:#8a4b08; }
+.scan-unit-chip.unknown { background:#eef0ea; color:#5d6d69; }
+.scan-unit-chip.bad { background:#ffe3e5; color:#b42332; }
+.scan-unit-chip.is-row-note { grid-column:1 / -1; justify-self:start; border-radius:8px; padding:3px 9px; line-height:1.5; }
+.scan-remove { min-height:40px; border:0; border-radius:8px; background:none; color:#5d6d69; cursor:pointer; }
+.scan-remove:hover, .scan-remove:focus-visible { color:#b42332; background:#fff0f1; }
+.scan-add { justify-self:start; display:inline-flex; align-items:center; gap:6px; min-height:38px; padding:7px 14px; border:1px dashed #b9cdc3; border-radius:999px; background:none; color:#146b60; font-size:13px; cursor:pointer; }
+.scan-add:hover, .scan-add:focus-visible { border-color:#146b60; }
+.scan-col-divider { margin:10px 0 2px; padding:4px 10px; border-left:3px solid #146b60; background:#f2f7f4; color:#174e3b; font-size:11px; font-weight:600; border-radius:0 8px 8px 0; }
+.scan-table > .scan-col-divider { border-radius:0; }
+.scan-zoom { position:fixed; inset:0; z-index:200; display:grid; grid-template-rows:1fr auto; gap:10px; place-items:center; padding:24px; background:rgba(23,40,34,.82); cursor:zoom-out; }
+.scan-zoom .photo-box { border:0; background:none; cursor:default; max-width:100%; max-height:calc(100dvh - 90px); }
+.scan-zoom .photo-box img { max-height:calc(100dvh - 100px); }
+.scan-zoom-hint { margin:0; color:#d7e0dc; font-size:12px; }
+.scan-panel .record-heading { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+.scan-card { border:1px solid #e5e7de; border-radius:12px; background:#fff; margin-top:10px; overflow:hidden; }
+.scan-card summary { display:flex; align-items:center; gap:12px; padding:10px 14px; cursor:pointer; list-style:none; }
+.scan-card summary::-webkit-details-marker { display:none; }
+.scan-card-thumb { flex:0 0 auto; width:52px; height:52px; border-radius:8px; border:1px solid #e5e7de; background:#f7f9f9; display:grid; place-items:center; overflow:hidden; }
+.scan-card-thumb img { width:100%; height:100%; object-fit:cover; }
+.scan-thumb-miss { width:20px; height:20px; border-radius:4px; background:#e5e7de; }
+.scan-card summary > div { flex:1; display:grid; gap:2px; min-width:0; }
+.scan-card summary strong { font-size:13px; color:#243d35; }
+.scan-card summary span { font-size:11px; color:#5d6d69; }
+.scan-detail { display:grid; gap:14px; padding:12px 14px 16px; border-top:1px solid #e5e7de; }
+.scan-side .form-two { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+.scan-detail .scan-photo .photo-box img { cursor:zoom-in; max-height:44vh; }
+/* 全列还原表格：中文名称|英文|结果|单位|参考范围|录入到（英文/参考列动态出现）。
+   列模板与表头/行共用同一套 class 组合，保证对齐 */
+.scan-table { display:grid; gap:0; font-size:12px; border:1px solid #e5e7de; border-radius:12px; overflow:hidden; }
+.scan-table-head { display:grid; gap:8px; padding:8px 12px; background:#f7f9f9; color:#5d6d69; font-size:11px; font-weight:600; border-bottom:1px solid #e5e7de; grid-template-columns:minmax(0,1.5fr) minmax(0,.8fr) minmax(60px,.7fr) minmax(0,1fr); }
+.scan-table-head.has-eng { grid-template-columns:minmax(0,1.5fr) minmax(0,.6fr) minmax(0,.8fr) minmax(60px,.7fr) minmax(0,1fr); }
+.scan-table-head.has-ref { grid-template-columns:minmax(0,1.4fr) minmax(0,.7fr) minmax(56px,.6fr) minmax(0,.9fr) minmax(0,1.2fr); }
+.scan-table-head.has-eng.has-ref { grid-template-columns:minmax(0,1.4fr) minmax(0,.5fr) minmax(0,.7fr) minmax(56px,.6fr) minmax(0,.9fr) minmax(0,1.2fr); }
+.scan-table-row { display:grid; gap:8px; padding:7px 12px; align-items:baseline; border-bottom:1px dashed #eef0ea; grid-template-columns:minmax(0,1.5fr) minmax(0,.8fr) minmax(60px,.7fr) minmax(0,1fr); }
+.scan-table-row:last-child { border-bottom:0; }
+.scan-table-row.has-eng { grid-template-columns:minmax(0,1.5fr) minmax(0,.6fr) minmax(0,.8fr) minmax(60px,.7fr) minmax(0,1fr); }
+.scan-table-row.has-ref { grid-template-columns:minmax(0,1.4fr) minmax(0,.7fr) minmax(56px,.6fr) minmax(0,.9fr) minmax(0,1.2fr); }
+.scan-table-row.has-eng.has-ref { grid-template-columns:minmax(0,1.4fr) minmax(0,.5fr) minmax(0,.7fr) minmax(56px,.6fr) minmax(0,.9fr) minmax(0,1.2fr); }
+.scan-table-row > span { min-width:0; }
+.scan-table .cell-name { font-weight:600; color:#243d35; overflow-wrap:anywhere; }
+.scan-table .cell-eng { color:#5d6d69; font-weight:600; letter-spacing:.02em; }
+.scan-table .cell-value { font-variant-numeric:tabular-nums; font-weight:700; color:#173f34; }
+.scan-table .cell-unit, .scan-table .cell-ref { color:#5d6d69; }
+.scan-target-cell { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; color:#243d35; }
+.scan-target-cell.muted { color:#8b9894; }
+.scan-target-cell .cell-unit { font-size:10px; color:#5d6d69; }
+.scan-readout { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
+.scan-readout li { display:grid; grid-template-columns:minmax(110px,1.4fr) minmax(90px,1fr) minmax(90px,1fr); gap:8px; align-items:baseline; font-size:12px; border-bottom:1px dashed #eef0ea; padding-bottom:5px; }
+.scan-readout li span { font-weight:600; color:#243d35; overflow:hidden; text-overflow:ellipsis; }
+.scan-readout li b { font-variant-numeric:tabular-nums; color:#173f34; }
+.scan-readout li small { color:#5d6d69; text-align:right; }
+.scan-linked { margin:0; font-size:12px; color:#5d6d69; }
+/* 记录卡片的操作按钮：小圆角框住两条按钮、靠右收边；「修改」在最右端（主操作），
+   「删除」在左、默认浅色，悬停才转红，点击仍走确认弹窗（不做无声删除） */
+.scan-card-actions { justify-self:end; max-width:100%; padding:6px; border:1px solid #e5e7de; border-radius:12px; background:#fafbfb; }
+.scan-card-actions button { min-height:36px; padding:6px 14px; border:1px solid #d9e3dd; border-radius:8px; background:#fff; color:#314c42; font-size:12px; font-weight:600; cursor:pointer; }
+.scan-card-actions button:hover, .scan-card-actions button:focus-visible { border-color:#146b60; color:#146b60; }
+.scan-card-actions .danger { border-color:#e5e7de; background:#fff; color:#5d6d69; }
+.scan-card-actions .danger:hover, .scan-card-actions .danger:focus-visible { border-color:#d94a56; background:#fff0f1; color:#b42332; }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+@media(max-width:899px) {
+ .scan-confirm, .scan-detail { grid-template-columns:1fr; }
+ .scan-photo { position:static; }
+ /* 窄屏放大对照：原件在上、表格在下，始终可编辑 */
+ .scan-confirm.is-photo-big { grid-template-columns:1fr; }
+ .photo-box.is-big img { max-height:46vh; }
+ /* 全列表格窄屏：隐藏表头，行内两列标签值堆叠（data-label 生成标签） */
+ .scan-table-head { display:none; }
+ .scan-table-row, .scan-table-row.has-eng, .scan-table-row.has-ref, .scan-table-row.has-eng.has-ref { grid-template-columns:minmax(0,1fr) minmax(0,1.2fr); row-gap:4px; }
+ .scan-table-row > span[data-label]::before { content:attr(data-label) "："; color:#8b9894; font-weight:500; font-size:10px; }
+}
+@media(max-width:767px) {
+ .scan-items-head { display:none; }
+ /* 三段堆叠：原文全宽 → 录入目标（含自定义名）全宽 → 数值 + 删除一行，永不换行错位 */
+ .scan-item { grid-template-columns:minmax(0,1fr) minmax(0,1fr) 40px; grid-template-areas:"raw raw raw" "target target target" "value value del"; row-gap:6px; }
+}
+
+/* 出具医院必填标记与识别确认提示 */
+.scan-meta label .required {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  font-style: normal;
+  color: #8a5a12;
+  background: #fdf3e2;
+  border: 1px solid #f0dfc0;
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+.scan-confirm-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #5d6d69;
 }

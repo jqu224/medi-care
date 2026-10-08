@@ -23,3 +23,31 @@ coverage/
 !README.md
 !README.zh-CN.md
 reference/
+
+# Raster images stay local. Hero art ships as SVG.
+*.png
+*.jpg
+*.jpeg
+*.jpe
+*.jfif
+*.jfi
+*.pjpeg
+*.pjp
+*.PNG
+*.JPG
+*.JPEG
+*.JPE
+*.JFIF
+*.JFI
+*.PJPEG
+*.PJP
+# Clinical case photos are JPG (reference/case-ref), so raster images stay
+# local everywhere except the two public asset positions below.
+!docs/assets/*.png
+!docs/assets/*.jpg
+!docs/assets/*.jpeg
+!app/public/*.png
+!app/public/*.jpg
+!app/public/*.jpeg
+# PP-OCR models are generated from node_modules by app/scripts/copy-ppocr.mjs
+app/public/ppocr/

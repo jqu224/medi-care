@@ -8,6 +8,8 @@ import { benchmarkFields, listedBenchmarks, rateObservation } from "./benchmark"
 import { recordDates } from "./recordDates";
 import Learning, { Assistant } from "./Learning";
 import { sections, type LearningSection } from "./learningContent";
+import { ScanDialog, ScanRecords } from "./Scan";
+import type { ScanRecord } from "./scanSession";
 import { DEFAULT_SETTINGS, METRICS, effThreshold } from "../engine/config";
 import { flushSync } from "react-dom";
 import { revealPatient, revealRows, SKELETON_MS } from "./motion";
@@ -59,6 +61,7 @@ import {
   Syringe,
   BookOpen as LucideBookOpen,
   ChartLine,
+  FileScan,
   Heart as LucideHeart,
   House as LucideHouse,
   MessageCircle,
@@ -79,13 +82,16 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { todayISO } from "../lib/date";
+import { todayISO, diffDays } from "../lib/date";
 import {
   actorFor,
   allowedPatients,
   alertsFor,
+  bucketKey,
   commit,
   eventTypes,
+  isGrain,
+  isTrendRange,
   loadDatabase,
   mutatePatient,
   now,
@@ -93,6 +99,10 @@ import {
   presets,
   seriesFor,
   togglePlan,
+  trendFull,
+  trendRange,
+  trendRanges,
+  trendTick,
   uid,
 } from "./model";
 import type {
@@ -101,17 +111,19 @@ import type {
   CareEvent,
   CarePlan,
   Database,
+  Grain,
   Metric,
   Monitor,
   Observation,
   Patient,
   Role,
+  TrendRange,
 } from "./model";
 import "./workspace.css";
 import "./trendDensity.css";
 type Tab = "首页" | "记录" | "照护" | "学习" | "问助手";
-type RecordSection = "时间线" | "趋势";
-const recordSections: RecordSection[] = ["时间线", "趋势"];
+type RecordSection = "时间线" | "趋势" | "扫描记录";
+const recordSections: RecordSection[] = ["时间线", "趋势", "扫描记录"];
 type ModalState = {
   type: "new" | "monitor" | "observation" | "event" | "plan" | "metric" | "profile";
   monitor?: Monitor;
@@ -122,6 +134,14 @@ type ModalState = {
 };
 const roleNames = { patient: "患者", family: "患者家属", doctor: "医生" };
 const demoPasswords = { patient: "xiaoyu", family: "lin", doctor: "chen" };
+const rangeHints: Record<TrendRange, string> = {
+  本周: "周一至今天",
+  本月: "1 日至今天",
+  "近 90 天": "约一个季度",
+  "近 180 天": "约半年",
+  "近 365 天": "约 1 年",
+  全部: "最早记录至今",
+};
 function read<T>(key: string, fallback: T): T {
   try {
     return JSON.parse(localStorage.getItem(key) || "null") ?? fallback;
@@ -184,6 +204,7 @@ export default function Workspace() {
   const [recordSection, setRecordSection] = useState<RecordSection>("时间线");
   const [learnSection, setLearnSection] = useState<LearningSection>("知识卡片");
   const [modal, setModal] = useState<ModalState | null>(null);
+  const [scanFlow, setScanFlow] = useState<null | { scan?: ScanRecord }>(null);
   const [error, setError] = useState(initial.error);
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
@@ -224,6 +245,7 @@ export default function Workspace() {
       setPatientId(r === "patient" ? "p1" : read("nuanshao:patient", "p1"));
       setShowList(r !== "patient");
       setModal(null);
+      setScanFlow(null);
       setNotice("");
       setTab("首页");
     } catch {
@@ -245,6 +267,7 @@ export default function Workspace() {
       setLoginError("");
       setLogoutTarget(null);
       setModal(null);
+      setScanFlow(null);
       setSearch("");
       setDisease("");
       setAttentionOnly(false);
@@ -259,7 +282,8 @@ export default function Workspace() {
         <div className="brand">
           <img className="brand-mark" src="/medi-care-mark.svg" alt="" />
           <span className="brand-wordmark">
-            迈迪克<small>Medi-care</small>
+            <span className="brand-latin">MediCare</span>
+            <span className="brand-han">迈迪克</span>
           </span>
         </div>
         <div className="entry-copy">
@@ -581,7 +605,8 @@ export default function Workspace() {
         <div className="header-brand">
           <img className="brand-mark" src="/medi-care-mark.svg" alt="" />
           <span className="brand-wordmark">
-            迈迪克<small>Medi-care</small>
+            <span className="brand-latin">MediCare</span>
+            <span className="brand-han">迈迪克</span>
           </span>
         </div>
         <span className="workspace-title">
@@ -970,30 +995,60 @@ export default function Workspace() {
                     </button>
                   ))}
                 </div>
-                <History
-                  key={patient.id + recordSection}
-                  patient={patient}
-                  metrics={db.metrics}
-                  trends={recordSection === "趋势"}
-                  readonly={readonly}
-                  actor={actor}
-                  onEditObservation={(observation) =>
-                    setModal({ type: "observation", observation })
-                  }
-                  onEditEvent={(event) => setModal({ type: "event", event })}
-                  onDelete={(kind, id) =>
-                    perform(() => {
-                      if (confirm("删除这条记录？此操作会同步更新趋势。"))
+                {recordSection === "扫描记录" ? (
+                  <ScanRecords
+                    key={patient.id + "scans"}
+                    patient={patient}
+                    metrics={db.metrics}
+                    readonly={readonly}
+                    onEdit={(scan) => setScanFlow({ scan })}
+                    onRemove={(scan) =>
+                      perform(() => {
+                        if (
+                          !confirm(
+                            "删除这次扫描？对应的检测记录会一并删除，趋势同步更新。",
+                          )
+                        )
+                          return;
                         update((p) => {
-                          if (kind === "observation")
-                            p.observations = p.observations.filter(
-                              (o) => o.id !== id,
-                            );
-                          else p.events = p.events.filter((e) => e.id !== id);
+                          p.observations = p.observations.filter(
+                            (o) => o.group !== scan.group,
+                          );
+                          p.scans = (p.scans ?? []).filter((s) => s.id !== scan.id);
                         });
-                    })
-                  }
-                />
+                      })
+                    }
+                  />
+                ) : (
+                  <History
+                    key={patient.id + recordSection}
+                    patient={patient}
+                    metrics={db.metrics}
+                    trends={recordSection === "趋势"}
+                    readonly={readonly}
+                    actor={actor}
+                    onEditObservation={(observation) =>
+                      setModal({ type: "observation", observation })
+                    }
+                    onEditEvent={(event) => setModal({ type: "event", event })}
+                    onOpenScan={() => {
+                      setTab("记录");
+                      setRecordSection("扫描记录");
+                    }}
+                    onDelete={(kind, id) =>
+                      perform(() => {
+                        if (confirm("删除这条记录？此操作会同步更新趋势。"))
+                          update((p) => {
+                            if (kind === "observation")
+                              p.observations = p.observations.filter(
+                                (o) => o.id !== id,
+                              );
+                            else p.events = p.events.filter((e) => e.id !== id);
+                          });
+                      })
+                    }
+                  />
+                )}
               </>
             )}
             {tab === "学习" && (
@@ -1141,12 +1196,30 @@ export default function Workspace() {
             actor={actor}
             update={update}
             onOpen={setModal}
+            onScan={() => {
+              setModal(null);
+              setScanFlow({});
+            }}
             onDone={() => {
               setModal(null);
               setNotice("已保存，记录与趋势已同步更新");
             }}
           />
         </Modal>
+      )}
+      {scanFlow && !readonly && (
+        <ScanDialog
+          db={db}
+          patient={patient}
+          actor={actor}
+          update={update}
+          editing={scanFlow.scan}
+          onClose={() => setScanFlow(null)}
+          onSaved={(msg) => {
+            setScanFlow(null);
+            setNotice(msg);
+          }}
+        />
       )}
     </div>
   );
@@ -1192,9 +1265,6 @@ function ProfileBar({
     document.addEventListener("keydown", esc);
     return () => document.removeEventListener("keydown", esc);
   }, [menuOpen]);
-  useEffect(() => {
-    if (readonly || hidden) setMenuOpen(false);
-  }, [readonly, hidden]);
   const sex = patient.profile.sex || "性别未填";
   const measures = [
     patient.profile.heightCm != null
@@ -1205,6 +1275,12 @@ function ProfileBar({
       : "体重未填",
   ].join(" · ");
   const editable = !readonly && !hidden;
+  /* 只读或隐藏时收起菜单：随 props 变化在渲染期同步，替代 effect 里 setState */
+  const [wasEditable, setWasEditable] = useState(editable);
+  if (editable !== wasEditable) {
+    setWasEditable(editable);
+    if (!editable) setMenuOpen(false);
+  }
   const lines = listedBenchmarks(patient, metrics);
   return (
     <div className="profile-bar">
@@ -1715,8 +1791,6 @@ const EVENT_ICONS: Record<string, LucideIcon> = {
   复诊: LucideStethoscope,
   调药: NotebookPen,
 };
-const eventIcon = (type: string): LucideIcon =>
-  EVENT_ICONS[type] ?? ClipboardList;
 function EventRow({
   event: e,
   hideDate = false,
@@ -1724,7 +1798,7 @@ function EventRow({
   event: CareEvent;
   hideDate?: boolean;
 }) {
-  const Icon = eventIcon(e.type);
+  const Icon = EVENT_ICONS[e.type] ?? ClipboardList;
   return (
     <div className="event-row">
       <span className="event-icon">
@@ -1811,6 +1885,7 @@ function History({
   actor,
   onEditObservation,
   onEditEvent,
+  onOpenScan,
   onDelete,
 }: {
   patient: Patient;
@@ -1820,12 +1895,15 @@ function History({
   actor: Actor;
   onEditObservation: (o: Observation) => void;
   onEditEvent: (e: CareEvent) => void;
+  onOpenScan: (scan: ScanRecord) => void;
   onDelete: (kind: string, id: string) => void;
 }) {
   const key = `nuanshao:view:${actor.role}:${p.id}:${trends}`;
   const [view, setView] = useState(() =>
     read(key, {
-      period: "周",
+      /* 趋势页默认按月看本月；时间线页保留按周选日的一贯口径。 */
+      period: trends ? "月" : "周",
+      range: "本月",
       date: todayISO(),
       monitor: "",
       kind: "全部",
@@ -1853,7 +1931,43 @@ function History({
     document.addEventListener("keydown", esc);
     return () => document.removeEventListener("keydown", esc);
   }, [pillMenu]);
-  const [start, end] = periodRange(view.date, view.period);
+  /* 时间维度与日历是同一个窗口的两种选法：点六个按钮走相对窗口，动日历则按所选日/周/月。 */
+  const range: TrendRange | null =
+    view.range === ""
+      ? null
+      : isTrendRange(view.range)
+        ? view.range
+        : "本月";
+  /* 日历的日/周/月同时是图表聚合粒度：按周 = 每点一周，按月 = 每点一月。 */
+  const period: Grain = isGrain(view.period) ? view.period : "日";
+  const [start, end] =
+    trends && range
+      ? trendRange(range, todayISO(), recordDates(p).first ?? "")
+      : periodRange(view.date, view.period);
+  const calendarChange = (
+    v: { period?: string; date?: string },
+    source?: "day" | "month" | "period",
+  ) => {
+    /* 翻月和换粒度都不改窗口：翻月只移动日历视图，换粒度只换聚合方式。 */
+    if (!trends || source !== "day") {
+      change(v);
+      return;
+    }
+    /* 选了具体日期，就改为按日历的日/周/月看这个窗口。 */
+    change({ ...v, range: "" });
+  };
+  const windowDays = diffDays(start, end) + 1;
+  /* 单日窗口画的是这一天内的每条记录，没有聚合口径可标。 */
+  const singleDay = start === end;
+  /* 体温与自评症状按周期内最高绘点，其余指标取周期内最近一次。 */
+  const aggregateNote = (id: string, g: Grain) => {
+    if (singleDay) return "";
+    return id === "temp" || isGradedSymptom(id)
+      ? g === "日"
+        ? "日最高"
+        : `${g}内最高`
+      : "";
+  };
   const monitor = p.monitors.find((m) => m.id === view.monitor);
   const ids = monitor
     ? monitor.metrics
@@ -1875,11 +1989,15 @@ function History({
     )
     .sort((a, b) => b.at.localeCompare(a.at));
 
-  const trendSeries = trends ? ids.map((id) => ({
-    id,
-    def: metrics.find((m) => m.id === id)!,
-    rows: seriesFor(p, id, start, end, view.period, id === "glucose" ? view.context : ""),
-  })) : [];
+  const trendSeries = trends ? ids.map((id) => {
+    const series = seriesFor(p, id, start, end, period, id === "glucose" ? view.context : "");
+    return {
+      id,
+      def: metrics.find((m) => m.id === id)!,
+      rows: series.rows,
+      usedGrain: series.grain,
+    };
+  }) : [];
   const emptyTrendSeries = trendSeries.filter(({ rows }) => rows.length === 0);
 
   const shownObservations = !trends && view.kind === "事件" ? [] : observations;
@@ -1999,6 +2117,19 @@ function History({
               >
                 更改
               </button>
+              {(p.scans ?? []).some((s) => s.group === o.group) && (
+                <button
+                  role="menuitem"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPillMenu(null);
+                    const scan = (p.scans ?? []).find((s) => s.group === o.group);
+                    if (scan) onOpenScan(scan);
+                  }}
+                >
+                  查看扫描原件
+                </button>
+              )}
               <button
                 role="menuitem"
                 className="danger"
@@ -2040,56 +2171,39 @@ function History({
       }
     >
       <div className="history-controls panel">
-        <div className={trends ? "trend-context" : undefined}>
-        <Calendar
-          patient={p}
-          date={view.date}
-          period={view.period}
-          onChange={change}
-        />
         {trends && (
-          <section className="trend-period-summary" aria-label="周期聚合分析">
-            <div className="section-head">
-              <h2>{view.period === "月" ? "本月" : view.period === "周" ? "本周" : "当日"}记录概览</h2>
-              <small>{dates.length} 个记录日</small>
-            </div>
-            <dl className="trend-summary-counts">
-              {[
-                ["检测", summary.sessions, "次"],
-                ["治疗与就诊", summary.events, "条"],
-                ["住院", summary.admissions, "次"],
-                ["输液", summary.infusions, "次"],
-              ].map(([label, value, unit]) => (
-                <div key={label}><dt>{label}</dt><dd>{value}<small>{unit}</small></dd></div>
+          <section className="range-bar" aria-label="趋势图筛选">
+            <label className="range-picker">
+              <span className="range-bar-label">时间维度</span>
+              <select
+                aria-label="时间维度"
+                value={range ?? ""}
+                onChange={(e) =>
+                  e.target.value
+                    ? change({ range: e.target.value, date: todayISO() })
+                    : change({ range: "" })
+                }
+              >
+                {trendRanges.map((r) => (
+                  <option key={r} value={r}>
+                    {r}（{rangeHints[r]}）
+                  </option>
+                ))}
+                <option value="">按日历选择</option>
+              </select>
+            </label>
+            <select
+              aria-label="病种筛选"
+              value={view.monitor}
+              onChange={(e) => change({ monitor: e.target.value })}
+            >
+              <option value="">全部监控</option>
+              {p.monitors.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
               ))}
-            </dl>
-            <p className="trend-assessment">
-              {summary.assessed
-                ? <>已评估 {summary.assessed} 项检测，其中 <strong>{summary.exceededIds.length} 项超阈值</strong></>
-                : "此范围暂无可评估阈值的检测"}
-            </p>
-            <small>按所选日期与病种汇总。超阈值按检测项计数，不等于警报次数。</small>
-            <details className="trend-shared-events" key={p.id + start + end + view.monitor}>
-              <summary>同期事件 <span>{events.length} 条 · 展开查看</span></summary>
-              {events.length ? events.map((e) => <EventRow key={e.id} event={e} />) : <p>这段时间没有治疗或就诊事件</p>}
-            </details>
-          </section>
-        )}
-        </div>
-        <div className="filter-row">
-          <select
-            aria-label="病种筛选"
-            value={view.monitor}
-            onChange={(e) => change({ monitor: e.target.value })}
-          >
-            <option value="">全部监控</option>
-            {p.monitors.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-          {trends && (
+            </select>
             <label className="graph-scale-control">
               <span>图表大小</span>
               <input
@@ -2108,8 +2222,77 @@ function History({
                 {graphScale < 35 ? "紧凑" : graphScale < 70 ? "标准" : "宽幅"}
               </output>
             </label>
-          )}
-          {!trends && (
+            <small className="range-window" aria-live="polite">
+              {start} 至 {end} · 共 {windowDays} 天 ·{" "}
+              {range ? `${range}（${rangeHints[range]}）` : "按日历选择"} · 图表按
+              {period}聚合
+            </small>
+          </section>
+        )}
+        <div className={trends ? "trend-context" : undefined}>
+        <Calendar
+          patient={p}
+          date={view.date}
+          period={view.period}
+          onChange={calendarChange}
+          windowRange={trends && range ? [start, end] : undefined}
+        />
+        {trends && (
+          <section className="trend-period-summary" aria-label="周期聚合分析">
+            <div className="section-head">
+              <h2>
+                {range
+                  ? `${range}记录概览`
+                  : view.period === "日"
+                    ? `${view.date} 记录概览`
+                    : view.period === "周"
+                      ? "所选周记录概览"
+                      : `${view.date.slice(0, 4)}年${Number(view.date.slice(5, 7))}月记录概览`}
+              </h2>
+              <small>{dates.length} 个记录日</small>
+            </div>
+            <dl className="trend-summary-counts">
+              {[
+                ["检测", summary.sessions, "次"],
+                ["治疗与就诊", summary.events, "条"],
+                ["住院", summary.admissions, "次"],
+                ["输液", summary.infusions, "次"],
+              ].map(([label, value, unit]) => (
+                <div key={label}><dt>{label}</dt><dd>{value}<small>{unit}</small></dd></div>
+              ))}
+            </dl>
+            <p className="trend-assessment">
+              {summary.assessed
+                ? <>已评估 {summary.assessed} 项检测，其中 <strong>{summary.exceededIds.length} 项超阈值</strong></>
+                : "此范围暂无可评估阈值的检测"}
+            </p>
+            <small>按所选时间维度与病种汇总。超阈值按检测项计数，不等于警报次数。</small>
+            {period !== "日" && (
+              <small>
+                日历里的日/周/月决定图表聚合与窗口：按{period}聚合时，体温与自评症状取{period}内最高，其余指标取{period}内最近一次。某项指标记录太少时会自动细化到更细的周期，以卡片标题为准。
+              </small>
+            )}
+            <details className="trend-shared-events" key={p.id + start + end + view.monitor}>
+              <summary>同期事件 <span>{events.length} 条 · 展开查看</span></summary>
+              {events.length ? events.map((e) => <EventRow key={e.id} event={e} />) : <p>这段时间没有治疗或就诊事件</p>}
+            </details>
+          </section>
+        )}
+        </div>
+        {!trends && (
+          <div className="filter-row">
+            <select
+              aria-label="病种筛选"
+              value={view.monitor}
+              onChange={(e) => change({ monitor: e.target.value })}
+            >
+              <option value="">全部监控</option>
+              {p.monitors.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
             <select
               aria-label="记录类型"
               value={view.kind}
@@ -2119,23 +2302,22 @@ function History({
                 <option key={t}>{t}</option>
               ))}
             </select>
-          )}
-          <small>
-            {start} 至 {end}
-          </small>
-        </div>
+            <small>
+              {start} 至 {end}
+            </small>
+          </div>
+        )}
       </div>
       {trends ? (
         <div className="trend-grid">
-          {trendSeries.filter(({ rows }) => rows.length > 0).map(({ id, def, rows }) => {
+          {trendSeries.filter(({ rows }) => rows.length > 0).map(({ id, def, rows, usedGrain }) => {
             return (
               <section className="panel" key={id}>
                 <div className="section-head">
                   <div>
                     <h2>{def.name}</h2>
                     <p>
-                      {def.unit}{" "}
-                      {id === "temp" && view.period !== "日" ? "· 日最高" : ""}
+                      {def.unit} {aggregateNote(id, usedGrain)}
                     </p>
                   </div>
                   {id === "glucose" && (
@@ -2152,13 +2334,14 @@ function History({
                 </div>
                 {rows.length ? (
                   isGradedSymptom(id) ? (
-                    <><SymptomTrend id={id} rows={rows} />{rows.map(o => <p key={o.id}>{stamp(o.at)} · {symptomValue(o)} · {symptomChange(o, p.observations)}<br />{symptomDetail(o)}</p>)}</>
+                    <><SymptomTrend id={id} rows={rows} labelOf={(at) => trendTick(at, usedGrain, windowDays)} note={aggregateNote(id, usedGrain)} />{rows.map(o => <p key={o.id}>{stamp(o.at)} · {symptomValue(o)} · {symptomChange(o, p.observations)}<br />{symptomDetail(o)}</p>)}</>
                   ) : def.type === "number" || def.type === "bp" ? (
                     <div className="chart">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart
                           data={rows.map((o) => ({
-                            date: o.at.slice(5).replace("T", " "),
+                            x: trendTick(o.at, usedGrain, windowDays),
+                            full: trendFull(o.at, usedGrain, windowDays),
                             value: Number(o.value.split("/")[0]),
                             diastolic:
                               def.type === "bp"
@@ -2168,7 +2351,7 @@ function History({
                         >
                           <CartesianGrid vertical={false} stroke="#eceae4" />
                           <XAxis
-                            dataKey="date"
+                            dataKey="x"
                             tick={{ fontSize: 10 }}
                             minTickGap={35}
                           />
@@ -2177,28 +2360,32 @@ function History({
                             width={42}
                             tick={{ fontSize: 11 }}
                           />
-                          <Tooltip />
+                          <Tooltip
+                            labelFormatter={(_, payload) =>
+                              payload?.[0]?.payload?.full ?? ""
+                            }
+                          />
                           {events
-                            .filter((e) =>
-                              rows.some(
-                                (o) => o.at.slice(0, 10) === e.at.slice(0, 10),
-                              ),
+                            .map((e) => ({ e, key: bucketKey(e.at, usedGrain) }))
+                            .filter(
+                              ({ key }, i, marks) =>
+                                marks.findIndex((m) => m.key === key) === i,
                             )
-                            .map((e) => (
-                              <ReferenceLine
-                                key={e.id}
-                                x={rows
-                                  .find(
-                                    (o) =>
-                                      o.at.slice(0, 10) === e.at.slice(0, 10),
-                                  )!
-                                  .at.slice(5)
-                                  .replace("T", " ")}
-                                stroke="#a4aa94"
-                                strokeDasharray="3 3"
-                                label={{ value: e.type, fontSize: 10 }}
-                              />
-                            ))}
+                            .map(({ e, key }) => {
+                              /* 事件按同一个聚合周期落到点上，找不到对应点就不画。 */
+                              const row = rows.find(
+                                (o) => bucketKey(o.at, usedGrain) === key,
+                              );
+                              return row ? (
+                                <ReferenceLine
+                                  key={e.id}
+                                  x={trendTick(row.at, usedGrain, windowDays)}
+                                  stroke="#a4aa94"
+                                  strokeDasharray="3 3"
+                                  label={{ value: e.type, fontSize: 10 }}
+                                />
+                              ) : null;
+                            })}
                           <Line
                             name={def.type === "bp" ? "收缩压" : def.name}
                             dataKey="value"
@@ -2494,6 +2681,7 @@ function Editor({
   actor,
   update,
   onOpen,
+  onScan,
   onDone,
 }: {
   modal: ModalState;
@@ -2502,6 +2690,7 @@ function Editor({
   actor: Actor;
   update: (fn: (p: Patient) => void, extra?: (d: Database) => void) => void;
   onOpen: (m: ModalState) => void;
+  onScan: () => void;
   onDone: () => void;
 }) {
   const [error, setError] = useState("");
@@ -2692,12 +2881,16 @@ function Editor({
       <div className="action-list">
         {(
           [
+            ["scan", "添加扫描记录", "拍摄化验单或病历，识别后确认录入", FileScan],
             ["monitor", "新增病种监控", "选择预设，建立专属指标组合", Heart],
             ["observation", "常规检测", "体温、症状和检验，一次记清", Activity],
             ["event", "治疗与就诊事件", "服药、打针、输液及就诊", Pill],
           ] as const
         ).map(([type, title, desc, Icon]) => (
-          <button key={type} onClick={() => onOpen({ type })}>
+          <button
+            key={type}
+            onClick={() => (type === "scan" ? onScan() : onOpen({ type }))}
+          >
             <span className="monitor-icon">
               <Icon size={26} />
             </span>
