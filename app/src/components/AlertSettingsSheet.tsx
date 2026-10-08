@@ -116,7 +116,7 @@ export function AlertSettingsSheet({
           </section>
 
           <p className="mt-3 px-1 text-[11px] leading-relaxed text-stone-400">
-            设置只影响预警提示的触发与排序，不构成任何诊疗判断；阈值口径来自 2016 PRINTO/ACR/EULAR 与 2023 EULAR/PReS。
+            设置只影响预警提示的触发与排序，不构成任何诊疗判断。观察线只用于提醒，不作为诊断。
           </p>
 
           <button

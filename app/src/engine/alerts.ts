@@ -52,6 +52,12 @@ function overLine(key: MetricKey, value: number, s: number): boolean {
   return def.direction === 'high' ? value > eff : value < eff
 }
 
+function feverLine(s: number, redDays: number): string {
+  const base = `发热观察线 38.3℃；连续 ${redDays} 天需要特别留意`
+  if (s === 1) return base
+  return `发热观察线 38.3℃，当前提醒线 ${round1(effThreshold(38.3, s))}℃；连续 ${redDays} 天需要特别留意`
+}
+
 function lineText(key: MetricKey, s: number): string {
   const def = METRIC_MAP[key]
   if (def.threshold === undefined) return def.refLabel
@@ -122,11 +128,11 @@ export function runEngine({ data, settings }: EngineInput): Alert[] {
     alerts.push({
       id: 'fever',
       level: red ? 'red' : 'yellow',
-      title: `持续发热第 ${feverDays} 天${red ? '，已达 HLH 发热时长' : ''}`,
+      title: `持续发热第 ${feverDays} 天${red ? '，已满连续发热观察时长' : ''}`,
       summary: `日最高温连续 ${feverDays} 天 ≥38.3℃，最近 ${lastMax.toFixed(1)}℃`,
       evidence: {
         what: `日最高体温连续 ≥38.3℃，最近一日 ${lastMax.toFixed(1)}℃`,
-        line: `发热标准 38.3℃（s 调整后 ${round1(effThreshold(38.3, s))}℃）；${feverRedDays} 天为 HLH 时长线`,
+        line: feverLine(s, feverRedDays),
         duration: `已连续 ${feverDays} 天`,
         basis: BASIS.fever,
         action: red
@@ -146,7 +152,7 @@ export function runEngine({ data, settings }: EngineInput): Alert[] {
     alerts.push({
       id: 'ferritin',
       level: red ? 'red' : 'yellow',
-      title: `铁蛋白 ${fer.value.toFixed(0)} ng/mL，${red ? '已超过阈值 2 倍' : '越过 PRINTO 线'}`,
+      title: `铁蛋白 ${fer.value.toFixed(0)} ng/mL，${red ? '已超过观察线 2 倍' : '越过观察线'}`,
       summary: `${fmtCN(fer.date)}铁蛋白 ${fer.value.toFixed(0)}，线值 ${round1(eff)}`,
       evidence: {
         what: `铁蛋白 ${fer.value.toFixed(0)} ng/mL（${fmtCN(fer.date)}，${fer.source}）`,
@@ -172,14 +178,14 @@ export function runEngine({ data, settings }: EngineInput): Alert[] {
       alerts.push({
         id: 'cluster',
         level: 'red',
-        title: `PRINTO 组合条件触达：铁蛋白 + ${hit.length} 项异常`,
-        summary: `铁蛋白越线，且${names}同时越线`,
+        title: `铁蛋白和另外 ${hit.length} 项检验一起过了观察线`,
+        summary: `铁蛋白过了观察线，且${names}同时过线`,
         evidence: {
-          what: `铁蛋白 ${fer.value.toFixed(0)} ng/mL；伴随异常：${names}`,
-          line: hit.map((k) => lineText(k, s)).join('；'),
+          what: `铁蛋白 ${fer.value.toFixed(0)} ng/mL，同时${names}也过了观察线`,
+          line: hit.map((k) => `${METRIC_MAP[k].name}${lineText(k, s)}`).join('；'),
           duration: '以最近一次检验为准',
           basis: BASIS.cluster,
-          action: '建议 24 到 48 小时内复诊，携带完整检验卡与趋势图',
+          action: '24 到 48 小时内复诊，带上完整检验和趋势图',
         },
         metricKeys: ['ferritin', ...hit],
         weight: 90 + hit.length,
@@ -204,7 +210,7 @@ export function runEngine({ data, settings }: EngineInput): Alert[] {
           summary: `${fmtCN(prev.date)}到${fmtCN(last.date)}：${prev.value.toFixed(0)} → ${last.value.toFixed(0)} ng/mL`,
           evidence: {
             what: `铁蛋白 ${prev.value.toFixed(0)} → ${last.value.toFixed(0)} ng/mL，折算周增幅 ${(weeklyGrowth * 100).toFixed(0)}%`,
-            line: `趋势预警线：周增幅 ${(slopeLine * 100).toFixed(0)}%（单点静态评分无此项）`,
+            line: `趋势观察线：一周内升高超过 ${(slopeLine * 100).toFixed(0)}%（只看一次结果看不出来）`,
             duration: `跨 ${spanDays} 天`,
             basis: BASIS.trend,
             action: '加密复查频率至每周；下次门诊主动询问是否调整用药',

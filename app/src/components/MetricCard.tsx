@@ -37,7 +37,7 @@ export function MetricCard({
           <p className="text-[14px] font-semibold text-stone-700">{def.name}</p>
           {over && (
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-              越过{def.short === '体温' ? '参考' : 'PRINTO'}线
+              越过观察线
             </span>
           )}
         </div>
