@@ -230,20 +230,26 @@ type PpocrInstance = {
 
 let ppocrPromise: Promise<PpocrInstance> | null = null;
 
-/** PP-OCRv4 检测+识别两阶段，浏览器端 onnxruntime-web 推理；模型由 scripts/copy-ppocr.mjs
-    放到 /ppocr；wasm 加载器由 ORT 按 import.meta.url 相对解析（vite 已排除预构建）。
+/** PP-OCRv4 检测+识别两阶段，浏览器端 onnxruntime-web 推理。
+    模型在 /assets/ppocr/*.wasm（内容是 ONNX；Zion 托管会跳过 .onnx/.bin，只放行 .wasm）。
     detect() 的每行坐标框保留，供上层做区域（表格列）分析 */
 export const ppocrRecognizer: OcrRecognizer = async (dataUrl) => {
   if (!ppocrPromise) {
     ppocrPromise = (async () => {
       const ort = await import("onnxruntime-web");
       ort.env.wasm.numThreads = 1;
+      /* 生产构建里 ORT runtime wasm 已在 /assets；开发态兜底 CDN */
+      if (!ort.env.wasm.wasmPaths) {
+        ort.env.wasm.wasmPaths =
+          "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
+      }
       const mod = await import("@gutenye/ocr-browser");
+      const base = (import.meta.env.BASE_URL || "./").replace(/\/?$/, "/");
       return mod.default.create({
         models: {
-          detectionPath: "ppocr/ch_PP-OCRv4_det_infer.onnx",
-          recognitionPath: "ppocr/ch_PP-OCRv4_rec_infer.onnx",
-          dictionaryPath: "ppocr/ppocr_keys_v1.txt",
+          detectionPath: `${base}assets/ppocr/ch_PP-OCRv4_det_infer.wasm`,
+          recognitionPath: `${base}assets/ppocr/ch_PP-OCRv4_rec_infer.wasm`,
+          dictionaryPath: `${base}assets/ppocr/ppocr_keys_v1.txt`,
         },
       });
     })();
@@ -277,6 +283,10 @@ export const ppocrRecognizer: OcrRecognizer = async (dataUrl) => {
 
 function brief(e: unknown) {
   const msg = e instanceof Error ? e.message : String(e);
+  if (/Failed to fetch dynamically imported module|Loading chunk|dynamically imported/i.test(msg))
+    return "本地识别模块加载失败";
+  if (/failed to load model|onnx|InferenceSession|wasm/i.test(msg))
+    return "本地识别模型未就绪";
   return msg.length > 80 ? msg.slice(0, 80) + "…" : msg;
 }
 

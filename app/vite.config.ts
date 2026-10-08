@@ -7,13 +7,18 @@ import { inspectAttr } from 'kimi-plugin-inspect-react'
 export default defineConfig({
   base: './',
   plugins: [inspectAttr(), react()],
-  // onnxruntime-web resolves its wasm loader from import.meta.url.
-  // Prebundling breaks that path and falls back to a CDN, so keep it and the
-  // PP-OCR packages out of optimizeDeps. Prebundle the CJS/UMD helpers the
-  // excluded chain imports so dev and production resolve them the same way.
+  // onnxruntime-web: keep out of optimizeDeps so its wasm sibling resolves via
+  // import.meta.url (we also set ort.env.wasm.wasmPaths in scanEngines).
+  // Do NOT exclude @gutenye/ocr-browser — Vite then serves /node_modules/… as
+  // HTML and dynamic import fails with "Failed to fetch dynamically imported module".
   optimizeDeps: {
-    exclude: ["onnxruntime-web", "@gutenye/ocr-browser", "@gutenye/ocr-common"],
-    include: ["js-clipper", "@techstark/opencv-js"],
+    exclude: ["onnxruntime-web"],
+    include: [
+      "@gutenye/ocr-browser",
+      "@gutenye/ocr-common",
+      "js-clipper",
+      "@techstark/opencv-js",
+    ],
   },
   server: {
     port: 7100,
