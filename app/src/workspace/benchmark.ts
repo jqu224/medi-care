@@ -1,7 +1,8 @@
 import {
-  DEFAULT_SETTINGS,
   METRIC_MAP,
   effThreshold,
+  normalizeSettings,
+  tierFactor,
   type MetricKey,
 } from "../engine/config";
 import type {
@@ -28,7 +29,7 @@ function activeIds(patient: Patient) {
 function effectiveLine(patient: Patient, metricId: string, line: BenchmarkLine) {
   const rule = METRIC_MAP[metricId as MetricKey];
   if (!rule?.threshold) return line;
-  const s = (patient.settings ?? DEFAULT_SETTINGS).sensitivity;
+  const s = tierFactor(normalizeSettings(patient.settings).tier);
   const next = { ...line };
   if (rule.direction === "high" && next.high != null)
     next.high = effThreshold(next.high, s);

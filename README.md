@@ -1,5 +1,5 @@
 <div align="center">
-<img src="docs/assets/hero.svg" width="100%" alt="Medi-care — explainable trend alerts for rare-disease care" />
+<img src="docs/assets/hero.svg" width="100%" alt="MediCare — explainable trend alerts for rare-disease care" />
 </div>
 
 <div align="center">

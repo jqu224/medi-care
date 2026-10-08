@@ -330,7 +330,7 @@ function ResultView({
             ))}
           </ul>
           <p className="mt-3 border-t border-red-200 pt-3 text-[13px] leading-relaxed text-red-900">
-            本平台不能替代医生判断。请联系主治医生，或前往最近的儿童医院，并出示近 14 天体温与用药记录。
+            本平台不能替代医生判断。请联系主治医生，或前往最近的儿童医院，并出示近 14 天体温与用药记录
           </p>
         </div>
         <button

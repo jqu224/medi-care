@@ -7,7 +7,10 @@ import {
   type SymptomId,
 } from "../engine/config";
 import { runEngine } from "../engine/alerts";
+import type { Snapshot } from "../engine/staticScoring";
+import type { MedEvent } from "../data/seed";
 import { todayISO, addDaysISO } from "../lib/date";
+import type { ScanRecord } from "./scanSession";
 export type Role = "patient" | "family" | "doctor";
 export type Actor = { role: Role; name: string; patientIds: string[] };
 export type Metric = {
@@ -91,6 +94,7 @@ export type Patient = {
   observations: Observation[];
   events: CareEvent[];
   plans: CarePlan[];
+  scans?: ScanRecord[];
 };
 export type Database = { version: 2; metrics: Metric[]; patients: Patient[] };
 export const KEY = "nuanshao:workspace:v2";
@@ -210,6 +214,7 @@ export function seedDatabase(): Database {
     monitors: [monitor("sjia"), monitor("mas")],
     observations: [],
     events: [],
+    scans: [],
     plans: [
       {
         id: "plan1",
@@ -260,6 +265,7 @@ export function seedDatabase(): Database {
       monitors: [monitor("diabetes")],
       observations: [],
       events: [],
+      scans: [],
       plans: [],
     },
     {
@@ -271,6 +277,7 @@ export function seedDatabase(): Database {
       monitors: [monitor("heart")],
       observations: [],
       events: [],
+      scans: [],
       plans: [],
     },
   ];
@@ -326,6 +333,7 @@ export function loadDatabase(
     for (const p of parsed.patients as Patient[]) {
       if (!p.profile) p.profile = bodyFor(p.id);
       if (!p.benchmarks) p.benchmarks = benchmarksFor(p.id);
+      if (!p.scans) p.scans = [];
     }
     return parsed;
   }
@@ -438,6 +446,117 @@ export function mutatePatient(
 export function commit(storage: Pick<Storage, "setItem">, db: Database) {
   storage.setItem(KEY, JSON.stringify(db));
 }
+/**
+ * 把患者最近的记录组装成静态判分所需的快照。
+ *
+ * 取「每个指标最近一次有效数值」，并单独记录连续高热天数（HLH 需要 >38.5℃ 连续 7 天）。
+ * 脾大、NK 活性、sCD25、噬血现象、细胞减少系���等没有采集通道，保持 undefined，
+ * 由判分模块落成「未采集」——不静默当作未达标。
+ */
+export function snapshotFor(p: Patient): Snapshot {
+  const latestOf = (key: string): number | undefined => {
+    const hit = p.observations
+      .filter((o) => o.metric === key && Number.isFinite(Number(o.value)))
+      .sort((a, b) => b.at.localeCompare(a.at))[0];
+    return hit ? Number(hit.value) : undefined;
+  };
+  const days = [
+    ...new Set(p.observations.map((o) => o.at.slice(0, 10))),
+  ].sort();
+  let feverStreakHigh = 0;
+  for (let i = days.length - 1; i >= 0; i--) {
+    const max = Math.max(
+      0,
+      ...p.observations
+        .filter((o) => o.metric === "temp" && o.at.slice(0, 10) === days[i])
+        .map((o) => Number(o.value)),
+    );
+    if (max >= 38.5) feverStreakHigh++;
+    else break;
+  }
+  const feverToday = latestOf("temp");
+  const has = (key: string) =>
+    p.observations.some(
+      (o) => o.metric === key && (o.value === "是" || (o.symptom?.severity ?? 0) > 0),
+    );
+  /* 血细胞减少「累及外周血两系或三系」（PRD §2.2）。
+     只有拿到该项的实际结果才计数；没有结果就是「未测」，不按 0 计。
+     参考下限取常见成人/儿童下限，用于判断「这系是否偏低」，不是诊断阈值。 */
+  const lowLimit: Record<string, number> = { platelet: 150, 白细胞: 4, 血红蛋白: 120 };
+  let cytopeniaLines = 0;
+  let cytopeniaKnown = false;
+  for (const [name, limit] of Object.entries(lowLimit)) {
+    const v = latestOf(name);
+    if (v === undefined) continue;
+    cytopeniaKnown = true;
+    if (v < limit) cytopeniaLines++;
+  }
+  return {
+    ferritin: latestOf("ferritin"),
+    platelet: latestOf("platelet"),
+    ast: latestOf("ast"),
+    tg: latestOf("tg"),
+    fibrinogen: latestOf("fibrinogen"),
+    ldh: latestOf("ldh"),
+    flags: {
+      feverToday,
+      feverStreakHigh: feverStreakHigh || undefined,
+      cns: has("cns") || undefined,
+      bleeding: has("bleeding") || undefined,
+      arthritis: has("joint") || undefined,
+      cytopeniaLines: cytopeniaKnown ? cytopeniaLines : undefined,
+    },
+  };
+}
+
+const SCORED_METRICS = [
+  "temp",
+  "ferritin",
+  "platelet",
+  "ast",
+  "tg",
+  "fibrinogen",
+  "ldh",
+] as const;
+
+/** 记录时间给人看。没有钟点就明说，不补一个不存在的上传时刻。 */
+function clockLabel(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(iso);
+  if (!m) return iso;
+  const day = `${m[1]}年${Number(m[2])}月${Number(m[3])}日`;
+  return m[4] ? `${day} ${m[4]}:${m[5]}` : `${day}（没有记下几点）`;
+}
+
+/**
+ * 判分卡用的是哪一批数。不是平均值，也不是某一张化验单的整页。
+ * 每个指标各取 `at` 最近的一条；这些条的日期可以不同。
+ */
+export function assessmentBasis(p: Pick<Patient, "observations">): string {
+  const rows = SCORED_METRICS.map((key) =>
+    p.observations
+      .filter((o) => o.metric === key && Number.isFinite(Number(o.value)))
+      .sort(
+        (a, b) => b.at.localeCompare(a.at) || b.created.localeCompare(a.created),
+      )[0],
+  ).filter((o): o is Observation => !!o);
+  if (!rows.length)
+    return "还没有检验或体温。这不是平均值；有记录以后，每个指标各取自己最近的一条。";
+  const ats = [...new Set(rows.map((o) => o.at))].sort();
+  const createds = [...new Set(rows.map((o) => o.created))].sort();
+  const when =
+    ats.length === 1
+      ? `用到的记录时间是 ${clockLabel(ats[0])}`
+      : `用到的记录从 ${clockLabel(ats[0])} 到 ${clockLabel(ats[ats.length - 1])}`;
+  const sameStamp =
+    createds.length === ats.length && createds.every((c, i) => c === ats[i]);
+  const wrote = sameStamp
+    ? ""
+    : createds.length === 1
+      ? `，写入时间是 ${clockLabel(createds[0])}`
+      : `，写入时间从 ${clockLabel(createds[0])} 到 ${clockLabel(createds[createds.length - 1])}`;
+  return `不是平均值。每个指标只取自己最近的一条，不是同一次上传的化验单。${when}${wrote}。`;
+}
+
 export function alertsFor(p: Patient) {
   const active = p.monitors.filter(
     (m) => m.active && ["sjia", "mas"].includes(m.preset),
@@ -459,6 +578,18 @@ export function alertsFor(p: Patient) {
       ],
     ),
   ) as typeof SEED.series;
+  /* R8 需要的炎症指标不在 MAS 目录内，是扫描录入时建的自定义指标。
+     引擎 series 类型固定为 7 个主指标，这里另取一份按名匹配的序列传下去。 */
+  const inflammationSeries = p.observations
+    .filter(
+      (o) => keys.has(o.metric) && isInflammationMetric(o.metric) && Number.isFinite(Number(o.value)),
+    )
+    .sort((a, b) => a.at.localeCompare(b.at))
+    .map((o) => ({
+      date: o.at.slice(0, 10),
+      value: Number(o.value),
+      metricName: o.metric,
+    }));
   const days = [
     ...new Set(p.observations.map((o) => o.at.slice(0, 10))),
   ].sort();
@@ -478,9 +609,58 @@ export function alertsFor(p: Patient) {
     medDone: false,
   }));
   return runEngine({
-    data: { series, logs, events: [] },
+    data: { series, logs, events: engineEvents(p.events), inflammation: inflammationSeries },
     settings: p.settings ?? DEFAULT_SETTINGS,
   });
+}
+
+/**
+ * 炎症指标名称白名单。CRP / 血沉 / 白细胞不在 MAS 主指标目录内，
+ * 是扫描化验单时以自定义指标建库的（见 reference/case-ref/README.md）。
+ * 只按名称匹配，避免为每种检验单再扩一套阈值。
+ */
+const INFLAMMATION_RE = /crp|c[-_]?反应蛋白|血沉|沉降率|esr|白细胞|wbc|中性粒|neut/i;
+
+export function isInflammationMetric(metricId: string): boolean {
+  return INFLAMMATION_RE.test(metricId);
+}
+
+/**
+ * 工作台事件（中文 type）→ 引擎 MedEvent（英文 type）的映射。
+ *
+ * R7 激素减量窗口依赖 type === 'steroid'，此前工作台从未把事件传进引擎，
+ * 该规则一直是死代码。这里做保守映射：只有能确定是激素用药/减量的事件才标
+ * steroid，无法判定的一律不标——宁可漏提醒，也不误报。
+ */
+/* 只认糖皮质激素。刻意排除「生长激素」——它同样含「激素」二字，
+   但不是 R7 关心的减量药物，误判会开出一个不存在的观察窗口。 */
+const STEROID_HINTS =
+  /泼尼松|甲泼|地塞米松|强的松|醋酸|泼尼龙|曲安奈德|倍他米松|氢化可的松|糖皮质|肾上腺皮质激素/i;
+
+export function engineEvents(events: CareEvent[]): MedEvent[] {
+  const out: MedEvent[] = [];
+  for (const e of events) {
+    const haystack = `${e.drug} ${e.note} ${e.type}`;
+    const looksSteroid = STEROID_HINTS.test(haystack);
+    if (e.type === "调药") {
+      if (looksSteroid)
+        out.push({ date: e.at.slice(0, 10), type: "steroid", label: medicationLabel(e) });
+      // 非激素的调药不映射：R7 只关心激素减量窗口
+    } else if (e.type === "服药" || e.type === "打针") {
+      if (looksSteroid)
+        out.push({ date: e.at.slice(0, 10), type: "steroid", label: medicationLabel(e) });
+    } else if (e.type === "住院") {
+      out.push({ date: e.at.slice(0, 10), type: "hospital", label: e.hospital || "住院" });
+    } else if (e.type === "复诊") {
+      out.push({ date: e.at.slice(0, 10), type: "visit", label: e.hospital || "复诊" });
+    }
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function medicationLabel(e: CareEvent): string {
+  const dose = [e.dose, e.unit].filter(Boolean).join("");
+  return e.drug ? `${e.type}${dose ? ` ${dose}` : ""}` : e.type;
 }
 export function periodRange(date: string, period: string): [string, string] {
   if (period === "日") return [date, date];
@@ -494,14 +674,113 @@ export function periodRange(date: string, period: string): [string, string] {
     `${date.slice(0, 7)}-${new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()}`,
   ];
 }
+export const trendRanges = [
+  "本周",
+  "本月",
+  "近 90 天",
+  "近 180 天",
+  "近 365 天",
+  "全部",
+] as const;
+export type TrendRange = (typeof trendRanges)[number];
+export function isTrendRange(value: unknown): value is TrendRange {
+  return (
+    typeof value === "string" &&
+    (trendRanges as readonly string[]).includes(value)
+  );
+}
+const rollingDays: Record<string, number> = {
+  "近 90 天": 89,
+  "近 180 天": 179,
+  "近 365 天": 364,
+};
+/** 本周与本月对齐日历，其余为截至今天的滚动窗口，全部从最早一条记录起算。 */
+export function trendRange(
+  range: TrendRange,
+  today = todayISO(),
+  earliest = "",
+): [string, string] {
+  if (range === "全部")
+    return [earliest && earliest <= today ? earliest : today, today];
+  if (range === "本周") {
+    const d = new Date(today + "T12:00:00");
+    return [addDaysISO(today, -((d.getDay() + 6) % 7)), today];
+  }
+  if (range === "本月") return [today.slice(0, 7) + "-01", today];
+  return [addDaysISO(today, -rollingDays[range]), today];
+}
+/** 图表粒度：每个点代表一天的所有记录、一周或一个月的聚合值。 */
+export const grains = ["日", "周", "月"] as const;
+export type Grain = (typeof grains)[number];
+export function isGrain(value: unknown): value is Grain {
+  return (grains as readonly string[]).includes(value as string);
+}
+/** 记录所属周期：日期本身 / 该周周一 / 该月。 */
+export function bucketKey(at: string, grain: Grain): string {
+  const date = at.slice(0, 10);
+  if (grain === "日") return date;
+  const d = new Date(date + "T12:00:00");
+  if (grain === "周") return addDaysISO(date, -((d.getDay() + 6) % 7));
+  return date.slice(0, 7);
+}
+/** 周期最后一天，月度窗口与工具提示用。 */
+export function bucketEnd(key: string, grain: Grain): string {
+  if (grain === "日") return key;
+  if (grain === "周") return addDaysISO(key, 6);
+  const [y, m] = key.split("-").map(Number);
+  return `${key}-${new Date(y, m, 0).getDate()}`;
+}
+/** 坐标轴刻度：单日窗口按时刻，否则按日期（跨年补年份）；周取周一，月取年月。 */
+export function trendTick(at: string, grain: Grain, windowDays: number): string {
+  const date = at.slice(0, 10);
+  if (grain === "日") {
+    if (windowDays <= 1) return at.slice(11, 16) || date.slice(5);
+    return windowDays > 365 ? date.slice(2) : date.slice(5);
+  }
+  const key = bucketKey(date, grain);
+  if (grain === "周") return windowDays > 365 ? key.slice(2) : key.slice(5);
+  return key.slice(0, 7);
+}
+/** 工具提示标题：单日窗口给时刻，聚合窗口把周期写全，避免把周/月点当成某一天。 */
+export function trendFull(at: string, grain: Grain, windowDays = 30): string {
+  const date = at.slice(0, 10);
+  if (grain === "日")
+    return windowDays <= 1
+      ? at.slice(11, 16) || date
+      : date + (at.length > 10 ? " " + at.slice(11, 16) : "");
+  const key = bucketKey(date, grain);
+  if (grain === "周")
+    return `${key.slice(5)} 至 ${bucketEnd(key, "周").slice(5)}（周）`;
+  const [y, m] = key.split("-").map(Number);
+  return `${y}年${m}月`;
+}
+const finerGrain: Record<Grain, Grain> = { 日: "日", 周: "日", 月: "周" };
+/** 一个周期一个点：体温与自评症状取周期内最高，其余取周期内最后一次实测。 */
+function bucketize(rows: Observation[], metric: string, grain: Grain) {
+  const score = (o: Observation) =>
+    metric === "temp"
+      ? Number(o.value)
+      : (o.symptom?.severity ?? Number.NEGATIVE_INFINITY);
+  const buckets = new Map<string, Observation>();
+  for (const o of rows) {
+    const key = bucketKey(o.at, grain);
+    const prev = buckets.get(key);
+    if (!prev || score(o) >= score(prev)) buckets.set(key, o);
+  }
+  return [...buckets.values()];
+}
+/**
+ * 窗口太短时自动把粒度细化到能画出趋势为止（月→周→日），
+ * 免得「本月 + 按月」退化成孤零零一个点。返回实际使用的粒度。
+ */
 export function seriesFor(
   p: Patient,
   metric: string,
   start: string,
   end: string,
-  period: string,
+  grain: Grain,
   context = "",
-) {
+): { rows: Observation[]; grain: Grain } {
   const rows = p.observations
     .filter(
       (o) =>
@@ -511,14 +790,13 @@ export function seriesFor(
         (!context || o.context === context),
     )
     .sort((a, b) => a.at.localeCompare(b.at));
-  if (metric !== "temp" || period === "日") return rows;
-  const map = new Map<string, Observation>();
-  for (const o of rows) {
-    const day = o.at.slice(0, 10);
-    if (!map.has(day) || Number(map.get(day)!.value) < Number(o.value))
-      map.set(day, o);
-  }
-  return [...map.values()];
+  /* 单日窗口保留每一条记录，画出这一天内的变化；其余一个周期一个点。 */
+  if (grain === "日" && start === end) return { rows, grain };
+  if (grain === "日") return { rows: bucketize(rows, metric, "日"), grain };
+  const bucketed = bucketize(rows, metric, grain);
+  return bucketed.length >= 2
+    ? { rows: bucketed, grain }
+    : seriesFor(p, metric, start, end, finerGrain[grain], context);
 }
 export function togglePlan(p: Patient, plan: CarePlan, author: string) {
   const found = p.events.find(

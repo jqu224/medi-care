@@ -1,11 +1,39 @@
 import { useState } from "react";
 import {
+  ArrowLeft,
   ArrowRight,
+  CaretUp,
   Check,
+  ChatCircle,
   Lightbulb,
   Shuffle,
+  Sparkle,
 } from "@phosphor-icons/react";
-import type { Role } from "./model";
+import type { Patient, Role } from "./model";
+import ScrollTicker from "./ScrollTicker";
+import {
+  ASSISTANT_GUARDRAIL,
+  CONTEXT_WINDOW_OPTIONS,
+  DEFAULT_CONTEXT_DAYS,
+  FOCUS_ALL,
+  type ContextWindow,
+  defaultFocus,
+  focusOptions,
+  privacyNote,
+  promptHint,
+  buildContext,
+  capConversations,
+  conversationTitle,
+  loadHistory,
+  saveHistory,
+  questionGroups,
+  rotateSmart,
+  smartQuestions,
+  type Conversation,
+  type Turn,
+} from "./assistant";
+import { AI_DISCLAIMER } from "../engine/config";
+import type { StaticVerdict } from "../engine/staticScoring";
 import {
   sections,
   topics,
@@ -17,100 +45,16 @@ import {
 
 type Progress = { read: string[]; correct: string[]; words: string[] };
 const empty: Progress = { read: [], correct: [], words: [] };
+
+/* ── 问助手 ──────────────────────────────────────────────────────
+   走 Zion 行为流，密钥只存在于 Zion 项目环境变量里，前端只带 flow ID。
+   flow ID 改为可配置：行为流被删或改 ID 时，不该在前端持续报错而无从排查。 */
 const ASK_ENDPOINT =
   "https://zion-app.functorz.com/zero/DqQnbOV5vvJ/api/graphql-v2";
-const ASK_FLOW_ID = "a60f19aa-6500-4de9-a5e9-dd1c9322d5bd";
-const assistantPrompts = [
-  "铁蛋白这项检查在看什么？",
-  "糖化血红蛋白和当天血糖有什么不同？",
-  "照护计划和实际发生的事，为什么要分开记？",
-  "关节肿痛应该怎么记录？",
-];
+const ASK_FLOW_ID =
+  import.meta.env?.VITE_ZION_ASK_FLOW_ID?.trim() || "a60f19aa-6500-4de9-a5e9-dd1c9322d5bd";
 
-export function Assistant() {
-  const [askText, setAskText] = useState("");
-  const [askThread, setAskThread] = useState<
-    { role: "user" | "assistant"; text: string }[]
-  >([]);
-  const [askPending, setAskPending] = useState(false);
-  const ask = (raw: string) => {
-    const question = raw.trim();
-    if (!question || askPending) return;
-    setAskText("");
-    setAskPending(true);
-    setAskThread((thread) => [...thread, { role: "user", text: question }]);
-    askConcept(question).then(
-      (answer) => {
-        setAskThread((thread) => [
-          ...thread,
-          { role: "assistant", text: answer },
-        ]);
-        setAskPending(false);
-      },
-      () => {
-        setAskThread((thread) => [
-          ...thread,
-          { role: "assistant", text: "暂时没有回答，请稍后再试。" },
-        ]);
-        setAskPending(false);
-      },
-    );
-  };
-  return (
-    <article className="learning-ask" aria-label="问助手">
-      {askThread.length > 0 && (
-        <div className="assistant-thread" role="log" aria-live="polite">
-          {askThread.map((message, index) => (
-            <p key={index} className={message.role}>
-              {message.text}
-            </p>
-          ))}
-          {askPending && <p className="assistant pending">正在回答</p>}
-        </div>
-      )}
-      <div className="assistant-prompts" role="group" aria-label="可以这样问">
-        <span>可以这样问</span>
-        {assistantPrompts.map((prompt) => (
-          <button
-            key={prompt}
-            type="button"
-            disabled={askPending}
-            onClick={() => ask(prompt)}
-          >
-            {prompt}
-          </button>
-        ))}
-      </div>
-      <form
-        className="assistant-composer"
-        onSubmit={(event) => {
-          event.preventDefault();
-          ask(askText);
-        }}
-      >
-        <textarea
-          value={askText}
-          maxLength={500}
-          rows={2}
-          placeholder="问一个概念、检查名称，或记录方法"
-          aria-label="向助手提问"
-          onChange={(event) => setAskText(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              ask(askText);
-            }
-          }}
-        />
-        <button className="primary" disabled={askPending || !askText.trim()}>
-          发送
-        </button>
-      </form>
-    </article>
-  );
-}
-
-async function askConcept(question: string): Promise<string> {
+async function askAssistant(question: string, context: unknown): Promise<string> {
   const response = await fetch(ASK_ENDPOINT, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -119,7 +63,7 @@ async function askConcept(question: string): Promise<string> {
         "mutation ($args: Json!) { fz_invoke_action_flow(actionFlowId: " +
         JSON.stringify(ASK_FLOW_ID) +
         ", versionId: 1, args: $args) }",
-      variables: { args: { question } },
+      variables: { args: { question, context } },
     }),
   });
   const body = await response.json();
@@ -127,6 +71,319 @@ async function askConcept(question: string): Promise<string> {
   if (typeof answer === "string" && answer.trim()) return answer;
   throw new Error("empty");
 }
+
+export function Assistant({
+  patient,
+  role,
+  alerts,
+  verdicts,
+  nameOf,
+  unitOf,
+  historyOpen,
+  onHistoryOpenChange,
+}: {
+  patient: Patient;
+  role: Role;
+  alerts: { level: string; title: string }[];
+  verdicts?: StaticVerdict[];
+  nameOf?: (metricId: string) => string;
+  unitOf?: (metricId: string) => string;
+  historyOpen: boolean;
+  onHistoryOpenChange: (open: boolean) => void;
+}) {
+  const [askText, setAskText] = useState("");
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [askPending, setAskPending] = useState(false);
+  const [win, setWin] = useState<ContextWindow>(DEFAULT_CONTEXT_DAYS);
+  /* 关注的病种可切换：标题里那颗下拉就是它 */
+  const focuses = focusOptions(patient);
+  const [focus, setFocus] = useState(() => defaultFocus(patient));
+  /* 「Lucy」按钮：每点一次换一批智能问题 */
+  const [smartOffset, setSmartOffset] = useState(0);
+  /* 没对话时问题分组是主角；一旦开始问答，就把它们收起来，
+     否则七八张问题卡会横在回答和输入框中间，挡住真正要用的东西。 */
+  const [promptsOpen, setPromptsOpen] = useState(false);
+  const [history, setHistory] = useState<Conversation[]>(() =>
+    loadHistory(localStorage, role, patient.id),
+  );
+  const [historyWarn, setHistoryWarn] = useState("");
+
+  const groups = questionGroups(patient, focus);
+  /* 智能提问的候选来自真实记录：指标变化、判分位置、用药事件、正在响的警报 */
+  const smartPool = smartQuestions({ patient, verdicts, nameOf, unitOf, alerts });
+  const smart = rotateSmart(smartPool, smartOffset);
+
+  /* 每次提问后落盘。写失败不阻断对话——历史是可选项，不是功能前提。
+     封顶与落盘都交给 saveHistory，它以存储里的现状为准，
+     不会因为这里的 history 是旧闭包而把上一段对话挤掉。 */
+  const persist = (nextTurns: Turn[], stamp = new Date().toISOString()) => {
+    const convo: Conversation = {
+      id: `${stamp}-${Math.random().toString(36).slice(2, 8)}`,
+      startedAt: stamp,
+      updatedAt: stamp,
+      title: conversationTitle(nextTurns),
+      turns: nextTurns,
+    };
+    const written = saveHistory(localStorage, role, patient.id, convo);
+    if (written) {
+      setHistory(written);
+      setHistoryWarn("");
+    } else {
+      /* 写盘失败也要让这段对话继续留在屏幕上，只是不保证刷新后还在 */
+      setHistory(capConversations([convo, ...history]));
+      setHistoryWarn("这段对话没能保存到本机，刷新后会丢失");
+    }
+  };
+
+  const ask = (raw: string) => {
+    const question = raw.trim();
+    if (!question || askPending) return;
+    setAskText("");
+    setAskPending(true);
+    /* 点问题就发：发完把清单收起来，别让清单继续挡在回答和输入框之间 */
+    setPromptsOpen(false);
+    const withUser: Turn[] = [...turns, { role: "user", text: question }];
+    setTurns(withUser);
+    const context = buildContext({ patient, alerts, verdicts, window: win, unitOf });
+    askAssistant(question, { ...context, guardrail: ASSISTANT_GUARDRAIL }).then(
+      (answer) => {
+        const done: Turn[] = [...withUser, { role: "assistant", text: answer }];
+        setTurns(done);
+        setAskPending(false);
+        persist(done);
+      },
+      () => {
+        const done: Turn[] = [...withUser, { role: "assistant", text: "暂时没有回答，请稍后再试" }];
+        setTurns(done);
+        setAskPending(false);
+        persist(done);
+      },
+    );
+  };
+
+  return (
+    <article className="learning-ask" aria-label="问助手">
+      <header className="assistant-hero">
+        <div className="assistant-hero-text">
+          <h2 className="assistant-hero-title">
+            你关注的是{" "}
+            <span className="assistant-focus">
+              <select
+                value={focus}
+                onChange={(e) => setFocus(e.target.value)}
+                aria-label="切换关注的病种"
+              >
+                <option value={FOCUS_ALL}>所有问题</option>
+                {focuses.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </span>
+          </h2>
+          <p className="assistant-hero-lead">{promptHint()}</p>
+        </div>
+        <label className="assistant-window">
+          <span>读取记录</span>
+          <select
+            value={String(win)}
+            onChange={(e) =>
+              setWin(
+                e.target.value === "all"
+                  ? "all"
+                  : (Number(e.target.value) as ContextWindow),
+              )
+            }
+            aria-label="读取记录范围"
+          >
+            {CONTEXT_WINDOW_OPTIONS.map((o) => (
+              <option key={String(o.value)} value={String(o.value)}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </header>
+
+      {turns.length > 0 && (
+        <div className="assistant-thread" role="log" aria-live="polite">
+          {turns.map((message, index) => (
+            <p key={index} className={message.role}>
+              {message.text}
+            </p>
+          ))}
+          {askPending && <p className="assistant pending">正在回答</p>}
+        </div>
+      )}
+
+      <section className="assistant-prompts" aria-label="你可能想问的">
+        <div className="assistant-prompts-head">
+          <h3>你可能想问的</h3>
+          <div className="assistant-prompts-actions">
+            {turns.length > 0 && (
+              <button
+                type="button"
+                className="assistant-prompts-toggle"
+                aria-expanded={promptsOpen}
+                onClick={() => setPromptsOpen((v) => !v)}
+              >
+                {promptsOpen ? "收起" : "展开"}
+              </button>
+            )}
+            {/* Lucy：看一遍已有记录，换一批更贴合当前数据的问题 */}
+            <button
+              type="button"
+              className="assistant-lucy"
+              onClick={() => setSmartOffset((v) => v + 1)}
+              disabled={smartPool.length === 0}
+              title="重新分析记录，换一批问题"
+            >
+              <Sparkle size={15} aria-hidden="true" />
+              换一批
+            </button>
+          </div>
+        </div>
+        {(turns.length === 0 || promptsOpen) && (
+          <>
+            {smart.length > 0 && (
+              <section className="smart-questions" aria-label="根据你的记录生成的问题">
+                <h4 className="smart-session">
+                  <span>根据你的记录生成</span>
+                </h4>
+                <ul>
+                  {smart.map((q) => (
+                    <li key={q.id}>
+                      <button
+                        type="button"
+                        className="smart-question"
+                        disabled={askPending}
+                        onClick={() => ask(q.ask)}
+                      >
+                        <span className="smart-premise">
+                          <Sparkle size={13} aria-hidden="true" />
+                          {q.premise}
+                        </span>
+                        <span className="smart-ask">
+                          <ChatCircle size={13} aria-hidden="true" />
+                          {q.ask}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            <p className="assistant-prompts-note">
+              这些问题会自动结合孩子的过往数据，由 AI 分析后再回答，数据里没有的，它会直接说明
+            </p>
+            {groups.map((group) => (
+              <div className="prompt-group" key={group.id}>
+                {/* session line：标签压在一段渐隐的细线上，把不同病种的问题分开 */}
+                <h4 className="prompt-session">
+                  <span>{group.label}</span>
+                </h4>
+                <ul>
+                  {group.questions.map((question) => (
+                    <li key={question}>
+                      <button type="button" disabled={askPending} onClick={() => ask(question)}>
+                        <span>{question}</span>
+                        <ArrowRight size={15} aria-hidden="true" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </>
+        )}
+      </section>
+
+      <form
+        className="assistant-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          ask(askText);
+        }}
+      >
+        {/* 问过一轮之后，输入框左上角留一个出口：
+            点它回到「你可能想问的」那张清单，换一个问题再问 */}
+        {turns.length > 0 && (
+          <div className="assistant-composer-bar">
+            <button
+              type="button"
+              className="assistant-back"
+              aria-expanded={promptsOpen}
+              onClick={() => setPromptsOpen((v) => !v)}
+            >
+              {promptsOpen ? <CaretUp size={14} aria-hidden="true" /> : <ArrowLeft size={14} aria-hidden="true" />}
+              {promptsOpen ? "收起问题清单" : "换个问题"}
+            </button>
+          </div>
+        )}
+        <div className="assistant-composer-row">
+          <textarea
+            value={askText}
+            maxLength={500}
+            rows={2}
+            placeholder="也可以直接问：这几天的情况怎么样？"
+            aria-label="向助手提问"
+            onChange={(event) => setAskText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                ask(askText);
+              }
+            }}
+          />
+          <button className="primary" disabled={askPending || !askText.trim()}>
+            发送
+          </button>
+        </div>
+      </form>
+
+      {historyWarn && <p className="assistant-warn">{historyWarn}</p>}
+
+      <p className="assistant-privacy">{privacyNote(win)}</p>
+
+      {historyOpen && (
+        <div className="assistant-history" role="dialog" aria-label="历史对话">
+          <header>
+            <strong>历史对话</strong>
+            <button type="button" aria-label="关闭历史对话" onClick={() => onHistoryOpenChange(false)}>
+              关闭
+            </button>
+          </header>
+          {history.length === 0 ? (
+            <p className="assistant-history-empty">还没有历史对话</p>
+          ) : (
+            <ul>
+              {history.map((c) => (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTurns(c.turns);
+                      onHistoryOpenChange(false);
+                    }}
+                  >
+                    <span>{c.title}</span>
+                    <small>{c.updatedAt.slice(0, 10)}</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <div className="assistant-foot">
+        <ScrollTicker text={AI_DISCLAIMER} />
+      </div>
+    </article>
+  );
+}
+
 export default function Learning({
   role,
   section,
@@ -168,7 +425,7 @@ export default function Learning({
       localStorage.setItem(storageKey, JSON.stringify(next));
       setSaveError("");
     } catch {
-      setSaveError("学习进度暂未保存，当前练习可继续。");
+      setSaveError("学习进度暂未保存，当前练习可继续");
     }
   };
   const totalQuestions = quizSets.reduce((n, s) => n + s.questions.length, 0);
@@ -233,7 +490,7 @@ export default function Learning({
                 localStorage.setItem(storageKey, JSON.stringify(progress));
                 setSaveError("");
               } catch {
-                setSaveError("仍未保存，请检查浏览器存储后重试。");
+                setSaveError("仍未保存，请检查浏览器存储后重试");
               }
             }}
           >
@@ -353,7 +610,7 @@ export default function Learning({
             <div className="learning-feedback" role="status">
               <strong>
                 {choice === q.answer
-                  ? "答对了，记住这个区别。"
+                  ? "答对了，记住这个区别"
                   : "再认识一下："}
               </strong>
               <p>{q.explanation}</p>
@@ -395,7 +652,7 @@ export default function Learning({
           </span>
           <h3>“{word.meaning}”用英文怎么说？</h3>
           <p>
-            点击字母慢慢拼出来，猜错也可以继续。键盘聚焦此区域后可直接输入。
+            点击字母慢慢拼出来，猜错也可以继续，键盘聚焦此区域后可直接输入
           </p>
           <div
             className="word-puzzle"
@@ -445,10 +702,10 @@ export default function Learning({
             {solved
               ? `拼出来了！${word.word} = ${word.meaning}`
               : revealed
-                ? `一起记住：${word.word} = ${word.meaning}，下次再自己试试。`
+                ? `一起记住：${word.word} = ${word.meaning}，下次再自己试试`
                 : hint
                   ? word.hint
-                  : "不计失败次数，每次尝试都是学习。"}
+                  : "不计失败次数，每次尝试都是学习"}
           </div>
           <div className="exercise-actions">
             <button onClick={() => setHint(true)}>

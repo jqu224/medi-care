@@ -11,14 +11,23 @@ export default function Calendar({
   period,
   date,
   onChange,
+  windowRange,
 }: {
   patient: Patient;
   period: string;
   date: string;
-  onChange: (v: { period?: string; date?: string }) => void;
+  /** source: month 只移动日历视图，day / period 是选择数据窗口。 */
+  onChange: (
+    v: { period?: string; date?: string },
+    source?: "day" | "month" | "period",
+  ) => void;
+  /** 由相对时间维度（本周/近 90 天…）算出的窗口，覆盖日历自身的选区高亮。 */
+  windowRange?: [string, string];
 }) {
   const displayedMonth = date.slice(0, 7) + "-01";
-  const [start, end] = periodRange(date, period);
+  const [start, end] = windowRange ?? periodRange(date, period);
+  /* 相对时间维度（本周/近 90 天…）选中的窗口始终高亮；按日选择时只亮当天。 */
+  const highlightsRange = !!windowRange || period !== "日";
   const days = monthDates(displayedMonth);
   const rows = Array.from({ length: days.length / 7 }, (_, i) =>
     days.slice(i * 7, i * 7 + 7),
@@ -33,7 +42,7 @@ export default function Calendar({
     events: patient.events.filter((e) => e.at.startsWith(d)).length,
   });
   const selectDate = (d: string) => {
-    onChange({ date: d });
+    onChange({ date: d }, "day");
   };
   return (
     <section
@@ -44,7 +53,7 @@ export default function Calendar({
         <div className="calendar-navigation">
           <button
             aria-label="上个月"
-            onClick={() => onChange({ date: shiftMonth(date, -1) })}
+            onClick={() => onChange({ date: shiftMonth(date, -1) }, "month")}
           >
             <CaretLeft size={17} />
           </button>
@@ -53,19 +62,19 @@ export default function Calendar({
             aria-label={`${title}，点击回到今天`}
             title="回到今天"
             onClick={() => {
-              onChange({ date: todayISO() });
+              onChange({ date: todayISO() }, "month");
             }}
           >
             {title}
           </button>
           <button
             aria-label="下个月"
-            onClick={() => onChange({ date: shiftMonth(date, 1) })}
+            onClick={() => onChange({ date: shiftMonth(date, 1) }, "month")}
           >
             <CaretRight size={17} />
           </button>
         </div>
-        <div className="segmented" role="group" aria-label="选择粒度">
+        <div className="segmented" role="group" aria-label="日历选择粒度">
           <span
             className="segment-track"
             style={{
@@ -78,7 +87,7 @@ export default function Calendar({
               key={p}
               aria-pressed={p === period}
               className={p === period ? "selected" : ""}
-              onClick={() => onChange({ period: p })}
+              onClick={() => onChange({ period: p }, "period")}
             >
               {p}
             </button>
@@ -101,11 +110,11 @@ export default function Calendar({
                 <button
                   key={d}
                   type="button"
-                  aria-label={`${d}，${s.logs} 次检测，${s.events} 条事件`}
-                  aria-pressed={inRange}
+                  aria-label={`${d}，${s.logs} 次检测，${s.events} 条事件${highlightsRange && inRange ? "，在所选窗口内" : ""}`}
+                  aria-pressed={highlightsRange && inRange}
                   className={[
                     "cal-day",
-                    period !== "日" && inRange ? "range-selected" : "",
+                    highlightsRange && inRange ? "range-selected" : "",
                     d === date ? "chosen" : "",
                     d === todayISO() ? "is-today" : "",
                     outside ? "outside" : "",
@@ -130,7 +139,11 @@ export default function Calendar({
           事件
         </span>
         <small>
-          {period === "日" ? `已选 ${date}` : `已选 ${start} 至 ${end}`}
+          {windowRange
+            ? `窗口 ${start} 至 ${end}`
+            : period === "日"
+              ? `已选 ${date}`
+              : `已选 ${start} 至 ${end}`}
         </small>
       </div>
     </section>

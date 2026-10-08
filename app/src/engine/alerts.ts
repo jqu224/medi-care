@@ -9,6 +9,7 @@ import {
   SYMPTOMS,
   effDays,
   effThreshold,
+  tierFactor,
   type AlertSettings,
   type MetricKey,
 } from './config'
@@ -33,11 +34,37 @@ export interface Alert {
   evidence: Evidence
   metricKeys: MetricKey[]
   weight: number
+  /**
+   * 该去哪一级医疗资源。复刻需求方小 Q 的真实动作：
+   * 「遇到三系降低、铁蛋白急剧升高、肝肾功能出问题……建议一次性到大医院去看，
+   *   后期病情恶化，你没有办法转院，地方医疗水平不够」。
+   *
+   * 只说医疗资源类型，不列医院名、不做排名——数据无法验证，且有合规风险。
+   */
+  referral?: { level: ReferralLevel; resource: string }
+}
+
+export type ReferralLevel = 'routine' | 'soon' | 'urgent'
+
+export const REFERRAL_RESOURCE: Record<ReferralLevel, string> = {
+  urgent: '需要具备儿童风湿免疫专科和重症监护能力的医疗机构',
+  soon: '具备儿童风湿免疫专科的医疗机构',
+  routine: '维持原随访医院，随访时带上记录',
+}
+
+function referralFor(level: AlertLevel): { level: ReferralLevel; resource: string } {
+  const r: ReferralLevel = level === 'red' ? 'urgent' : level === 'yellow' ? 'soon' : 'routine'
+  return { level: r, resource: REFERRAL_RESOURCE[r] }
 }
 
 export interface EngineInput {
   data: SeedData
   settings: AlertSettings
+  /**
+   * R8 炎症指标回落：CRP / 血沉 / 白细胞等自定义指标的时序。
+   * 这些指标不在 MAS 主目录内，由工作台按名称匹配后单独传入；缺失即不触发。
+   */
+  inflammation?: { date: string; value: number; metricName: string }[]
 }
 
 function latest(data: SeedData, key: MetricKey) {
@@ -70,8 +97,9 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10
 }
 
-export function runEngine({ data, settings }: EngineInput): Alert[] {
-  const s = settings.sensitivity
+export function runEngine(input: EngineInput): Alert[] {
+  const { data, settings } = input
+  const s = tierFactor(settings.tier)
   const alerts: Alert[] = []
   const { days: feverDays, lastMax } = feverStreak(data.logs)
 
@@ -246,13 +274,63 @@ export function runEngine({ data, settings }: EngineInput): Alert[] {
     }
   }
 
+  // R8 炎症指标回落：发热仍在、炎症指标却明显下降
+  //
+  // 需求发起人原话场景（会议纪要 23:03）：发热时 CRP / 血沉 / 白细胞突然变正常，
+  // 地方医生可能以为「抗生素或小剂量激素起效了」，但这有可能正是噬血前兆，
+  // 接下来三系会降、铁蛋白会升。
+  //
+  // 这里只提示「别把回落读成好转」，不判定是否合并 MAS，故 level 固定为 watch。
+  // 30% 是工程经验值，不是指南阈值——与 R7 的 14 天窗口同性质。
+  const DROP_THRESHOLD = 0.3
+  const dropLine = DROP_THRESHOLD / s
+  const stillFever = todayLog ? Math.max(...todayLog.temps) >= 38.3 : false
+    if (stillFever && input.inflammation?.length) {
+      const byMetric = new Map<string, { date: string; value: number }[]>()
+      for (const p of input.inflammation) {
+        const arr = byMetric.get(p.metricName) ?? []
+        arr.push({ date: p.date, value: p.value })
+        byMetric.set(p.metricName, arr)
+      }
+      for (const [metricName, points] of byMetric) {
+        if (points.length < 2) continue
+        const prev = points[points.length - 2]
+        const last = points[points.length - 1]
+        if (prev.value <= 0) continue
+        const drop = (prev.value - last.value) / prev.value
+        if (drop < dropLine) continue
+        const name = last.value.toFixed(last.value < 10 ? 2 : 0)
+        const before = prev.value.toFixed(prev.value < 10 ? 2 : 0)
+        alerts.push({
+          id: 'reassure',
+          level: 'watch',
+          title: `${metricName} 明显回落，但还在发烧`,
+          summary: `${metricName} ${before} → ${name}（降 ${(drop * 100).toFixed(0)}%），最近仍在发热`,
+          evidence: {
+            what: `${metricName} 从 ${before} 降到 ${name}，而最近一天仍在发热`,
+            line: '炎症指标回落不等于好转；持续发热时，接下来几天更要看三系和铁蛋白',
+            duration: `跨 ${daysBetween(prev.date, last.date)} 天`,
+            basis: BASIS.reassure,
+            action: '保持原来的记录频率，接下来几天重点看血常规三系和铁蛋白；把这份变化带给医生看',
+          },
+          metricKeys: [],
+          weight: 6,
+        })
+        break
+      }
+    }
+
   // 分级与排序：一般指标的警报降级为 watch（可配置性的 UI 体现）
   const graded = alerts.map((a) => {
     const allCore = a.metricKeys.length === 0 || a.metricKeys.some((k) => settings.coreFlags[k])
     if (!allCore && a.level === 'yellow') return { ...a, level: 'watch' as AlertLevel }
     return a
   })
-  return graded.sort((a, b) => levelRank(b.level) - levelRank(a.level) || b.weight - a.weight)
+  /* 转诊建议挂在分级之后：降级成 watch 的警报只建议 routine，
+     否则家属会看到「已降级但仍要求去大医院」这种自相矛盾的说法。 */
+  return graded
+    .map((a) => ({ ...a, referral: referralFor(a.level) }))
+    .sort((a, b) => levelRank(b.level) - levelRank(a.level) || b.weight - a.weight)
 }
 
 function levelRank(l: AlertLevel): number {
